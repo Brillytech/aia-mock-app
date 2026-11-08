@@ -1,0 +1,68 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    @apply antialiased bg-[#f8f8f9] dark:bg-[#000000] text-zinc-900 dark:text-zinc-100 selection:bg-orange-500 selection:text-white;
+  }
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Crisp, lightweight surfaces without GPU-heavy multi-layer blur lag */
+.glass-nav {
+  @apply bg-white/95 dark:bg-[#09090b]/95 backdrop-blur-md border-b border-zinc-200/80 dark:border-zinc-800/80;
+}
+
+.glass-dock {
+  @apply bg-white/95 dark:bg-[#0c0c0e]/95 backdrop-blur-md border border-zinc-200/80 dark:border-zinc-800/80 shadow-lg;
+}
+
+.app-surface {
+  @apply bg-white dark:bg-[#0a0a0c] border border-zinc-200/80 dark:border-zinc-800/80;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-view {
+  animation: fadeUp 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(161, 161, 170, 0.1) 25%,
+    rgba(249, 115, 22, 0.12) 50%,
+    rgba(161, 161, 170, 0.1) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite linear;
+  @apply rounded-xl;
+}
