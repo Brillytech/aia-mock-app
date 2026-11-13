@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import AiaLogo from './AiaLogo';
 import {
   RotateCcw,
@@ -7,20 +7,26 @@ import {
   CheckCircle2,
   XCircle,
   ArrowLeft,
-  Sparkles,
+  Clock,
+  Lock,
   Check,
   ChevronLeft,
   ChevronRight,
   Trophy,
+  Medal,
+  Award,
   Search,
-  Link2
+  Link2,
+  ShieldCheck,
+  Sparkles
 } from 'lucide-react';
 
 export default function ResultView({
   result,
   user,
+  sittings = [],
   standings = [],
-  bookmarks,
+  bookmarks = [],
   onToggleBookmark,
   onRetryMistakes,
   onReturnHome
@@ -30,13 +36,60 @@ export default function ResultView({
   const [activeResultTab, setActiveResultTab] = useState('standings'); // 'standings' | 'review'
   const [reviewFilter, setReviewFilter] = useState('all');
   const [reviewPage, setReviewPage] = useState(0);
+  const [nowTick, setNowTick] = useState(Date.now());
+  const [showConfetti, setShowConfetti] = useState(false);
 
-  // Per-Test Standings Search & Pagination (Not just Top 10!)
   const [standingsSearch, setStandingsSearch] = useState('');
   const [standingsPage, setStandingsPage] = useState(0);
 
   const QUESTIONS_PER_PAGE = 3;
   const STANDINGS_PER_PAGE = 8;
+
+  const matchedSitting = sittings.find((s) => String(s.id) === String(result.sittingId));
+  const passMark = matchedSitting?.passMark || result.passMark || 50;
+  const releasePolicy =
+    matchedSitting?.releaseMode ||
+    (matchedSitting?.resultsReleased === false ? 'HELD' : result.releaseMode || 'INSTANT');
+  const releaseTimestamp = matchedSitting?.releaseAt || result.releaseAt || null;
+
+  const isHeldByAdmin =
+    result.mode !== 'PRACTICE' &&
+    (releasePolicy === 'HELD' ||
+      (releasePolicy === 'SCHEDULED' &&
+        releaseTimestamp &&
+        new Date(releaseTimestamp).getTime() > nowTick));
+
+  const didPass = result.percentage >= passMark;
+
+  // Auto-unlock check when scheduled time arrives
+  useEffect(() => {
+    if (!isHeldByAdmin) return;
+    const timer = setInterval(() => setNowTick(Date.now()), 5000);
+    return () => clearInterval(timer);
+  }, [isHeldByAdmin]);
+
+  // Trigger lightweight 3.2-second celebration confetti when candidate passes & results are released
+  useEffect(() => {
+    if (!isHeldByAdmin && didPass) {
+      setShowConfetti(true);
+      const timer = setTimeout(() => setShowConfetti(false), 3200);
+      return () => clearTimeout(timer);
+    }
+  }, [isHeldByAdmin, didPass]);
+
+  // Pre-compute 36 lightweight confetti particles in AIA brand colors (Orange, Teal, Amber Gold, Emerald)
+  const confettiPieces = useMemo(() => {
+    const colors = ['#ea580c', '#14b8a6', '#f59e0b', '#10b981', '#fb923c', '#2dd4bf'];
+    return Array.from({ length: 36 }).map((_, idx) => ({
+      id: idx,
+      left: `${(idx * 2.8 + (idx % 3) * 1.5) % 98}%`,
+      delay: `${(idx % 7) * 0.12}s`,
+      duration: `${2.1 + (idx % 5) * 0.22}s`,
+      color: colors[idx % colors.length],
+      size: idx % 2 === 0 ? 8 : 6,
+      rotate: (idx * 47) % 360
+    }));
+  }, []);
 
   const formatDuration = (secs) => {
     const m = Math.floor(secs / 60);
@@ -44,18 +97,160 @@ export default function ResultView({
     return `${m}m ${String(s).padStart(2, '0')}s`;
   };
 
-  // Filter standings specifically for THIS test/sitting
-  const testStandings = standings
-    .filter(
-      (s) =>
-        (result.sittingId && s.sittingId === result.sittingId) ||
-        s.sittingTitle === result.sittingTitle ||
-        s.mode === result.mode
-    )
-    .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.timeSecs - b.timeSecs));
+  const shareableExamUrl = `${window.location.origin}/?exam=${encodeURIComponent(
+    result.sittingId || 'sit-mock-1'
+  )}`;
+
+  // STRICT COPY: Copies ONLY the raw exam link
+  const handleCopyExamLink = () => {
+    navigator.clipboard.writeText(shareableExamUrl);
+    setCopiedExamLink(true);
+    setTimeout(() => setCopiedExamLink(false), 2200);
+  };
+
+  // NATIVE SHARE: Opens system share drawer
+  const handleNativeShareLink = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: result.title,
+          url: shareableExamUrl
+        });
+        return;
+      } catch (e) {}
+    }
+    handleCopyExamLink();
+  };
+
+  // ============================================================================
+  // EMBARGO SCREEN: Shown when Organiser holds or schedules results release
+  // ============================================================================
+  if (isHeldByAdmin) {
+    const formattedSchedule = releaseTimestamp
+      ? new Date(releaseTimestamp).toLocaleString([], {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        })
+      : null;
+
+    return (
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-8 sm:pt-14 pb-20 space-y-8 animate-view">
+        <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-4">
+          <button
+            onClick={onReturnHome}
+            className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-zinc-600 dark:text-zinc-300 hover:text-orange-600"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Return to Dashboard</span>
+          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCopyExamLink}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-bold hover:border-orange-500 transition-colors"
+            >
+              {copiedExamLink ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-teal-500" />
+                  <span>Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Link2 className="w-3.5 h-3.5 text-orange-600" />
+                  <span>Copy Link</span>
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleNativeShareLink}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-black text-xs font-bold transition-colors"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Share</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="app-surface rounded-3xl p-6 sm:p-10 border border-zinc-200 dark:border-zinc-800 text-center space-y-6">
+          <div className="w-16 h-16 rounded-2xl bg-orange-500/10 border border-orange-500/20 text-orange-600 flex items-center justify-center mx-auto">
+            <Lock className="w-8 h-8" />
+          </div>
+
+          <div className="space-y-2 max-w-lg mx-auto">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-widest px-3 py-1 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 font-bold">
+              <ShieldCheck className="w-3.5 h-3.5" /> Official Script Recorded
+            </span>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+              Submission Locked & Received
+            </h1>
+            <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
+              Your script for <strong className="text-zinc-900 dark:text-white">{result.title}</strong> has been securely saved. To protect exam integrity while other candidates are still writing, scores and question corrections are currently held by the Organiser.
+            </p>
+          </div>
+
+          {releasePolicy === 'SCHEDULED' && formattedSchedule && (
+            <div className="inline-flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-orange-500/10 border border-orange-500/30 text-orange-600 dark:text-orange-400 font-mono text-xs font-bold">
+              <Clock className="w-4 h-4" />
+              <span>Scheduled Release: {formattedSchedule}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-zinc-200 dark:divide-zinc-800 border-y border-zinc-200 dark:border-zinc-800 py-4 text-left sm:text-center gap-y-3">
+            <div className="px-4">
+              <span className="text-[10px] font-mono uppercase text-zinc-400 block">Candidate</span>
+              <span className="font-bold text-sm truncate block mt-0.5">{user.fullName}</span>
+            </div>
+            <div className="px-4 pt-3 sm:pt-0">
+              <span className="text-[10px] font-mono uppercase text-zinc-400 block">Attempted</span>
+              <span className="font-mono font-extrabold text-sm text-orange-600 block mt-0.5">
+                {Object.keys(result.answers || {}).length} / {result.totalQuestions} Qs
+              </span>
+            </div>
+            <div className="px-4 pt-3 sm:pt-0">
+              <span className="text-[10px] font-mono uppercase text-zinc-400 block">Finish Time</span>
+              <span className="font-mono font-extrabold text-sm text-teal-600 dark:text-teal-400 block mt-0.5">
+                {formatDuration(result.timeSpentSeconds)}
+              </span>
+            </div>
+          </div>
+
+          <div className="pt-2">
+            <button
+              onClick={onReturnHome}
+              className="px-6 py-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition-colors"
+            >
+              Back to Candidate Portal
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Deduplicate standings specifically for THIS sitting (1st attempt per student only)
+  const rawTestRows = standings.filter(
+    (s) =>
+      (result.sittingId && s.sittingId === result.sittingId) ||
+      s.sittingTitle === result.sittingTitle
+  );
+  const seenCandidates = new Set();
+  const testStandings = [];
+  for (const r of rawTestRows) {
+    const k = (r.email || r.name || '').toLowerCase().trim();
+    if (!seenCandidates.has(k)) {
+      seenCandidates.add(k);
+      testStandings.push(r);
+    }
+  }
+  testStandings.sort((a, b) => (b.score !== a.score ? b.score - a.score : a.timeSecs - b.timeSecs));
 
   const totalParticipants = Math.max(1, testStandings.length);
-  const userRankIndex = testStandings.findIndex((s) => s.id === result.entryId);
+  const userRankIndex = testStandings.findIndex(
+    (s) => s.id === result.entryId || s.name.toLowerCase() === user.fullName.toLowerCase()
+  );
   const userRank = userRankIndex !== -1 ? userRankIndex + 1 : 1;
 
   const avgScore = Math.round(
@@ -84,16 +279,6 @@ export default function ResultView({
     (standingsPage + 1) * STANDINGS_PER_PAGE
   );
 
-  const shareableExamUrl = `${window.location.origin}/?exam=${encodeURIComponent(
-    result.sittingId || 'sit-mock-1'
-  )}`;
-
-  const handleCopyExamLink = () => {
-    navigator.clipboard.writeText(shareableExamUrl);
-    setCopiedExamLink(true);
-    setTimeout(() => setCopiedExamLink(false), 2200);
-  };
-
   const handleShareBragCard = async () => {
     const shareText = `🔥 AIA Academy Result — Ranked #${userRank} of ${totalParticipants}!\n👤 ${user.fullName} (${user.department})\n📚 ${result.title}\n🎯 Score: ${result.percentage}% (Test Avg: ${avgScore}%)\n⚡ Time: ${formatDuration(result.timeSpentSeconds)}\n\nTake this exact mock here: ${shareableExamUrl}`;
 
@@ -121,8 +306,40 @@ export default function ResultView({
     (reviewPage + 1) * QUESTIONS_PER_PAGE
   );
 
+  const topThreeInExam = testStandings.slice(0, 3);
+
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 sm:pt-10 pb-20 space-y-8 animate-view">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 sm:pt-10 pb-20 space-y-8 animate-view relative">
+      {/* LIGHTWEIGHT ZERO-LAG CONFETTI SPLASH (Auto-unmounts after 3.2s) */}
+      {showConfetti && (
+        <>
+          <style>{`
+            @keyframes aiaConfettiFall {
+              0% { transform: translate3d(0, -20px, 0) rotate(0deg); opacity: 1; }
+              75% { opacity: 1; }
+              100% { transform: translate3d(15px, 68vh, 0) rotate(540deg); opacity: 0; }
+            }
+          `}</style>
+          <div className="fixed inset-x-0 top-0 h-[70vh] pointer-events-none z-50 overflow-hidden">
+            {confettiPieces.map((p) => (
+              <span
+                key={p.id}
+                style={{
+                  position: 'absolute',
+                  top: '-12px',
+                  left: p.left,
+                  width: `${p.size}px`,
+                  height: `${p.size * 1.6}px`,
+                  backgroundColor: p.color,
+                  borderRadius: '2px',
+                  animation: `aiaConfettiFall ${p.duration} cubic-bezier(0.22, 1, 0.36, 1) ${p.delay} forwards`
+                }}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
       {/* Top Action Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 dark:border-zinc-800 pb-4">
         <button
@@ -137,18 +354,28 @@ export default function ResultView({
           <button
             onClick={handleCopyExamLink}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-bold hover:border-orange-500 transition-colors"
+            title="Copy Strict Exam Link Only"
           >
             {copiedExamLink ? (
               <>
                 <Check className="w-3.5 h-3.5 text-teal-500" />
-                <span>Exam Link Copied!</span>
+                <span>Link Copied!</span>
               </>
             ) : (
               <>
                 <Link2 className="w-3.5 h-3.5 text-orange-600" />
-                <span>Share Exam Link</span>
+                <span>Copy Link</span>
               </>
             )}
+          </button>
+
+          <button
+            onClick={handleNativeShareLink}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-bold hover:border-orange-500 transition-colors"
+            title="Share Exam"
+          >
+            <Share2 className="w-3.5 h-3.5 text-teal-500" />
+            <span>Share</span>
           </button>
 
           {result.missedQuestions.length > 0 && (
@@ -163,25 +390,43 @@ export default function ResultView({
         </div>
       </div>
 
+      {/* Notice Banner if this was a Retake (2nd+ attempt) */}
+      {result.isFirstAttempt === false && (
+        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <Sparkles className="w-4 h-4 text-amber-500 flex-shrink-0" />
+            <span>
+              <strong>Retake Practice Attempt (#{result.attemptNumber}):</strong> Your personal score is shown below. Note that the Official Leaderboard strictly preserves each candidate's <strong>1st attempt</strong>.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Hero Breakdown + Brag Slip */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
         <div className="lg:col-span-7 flex flex-col justify-between space-y-6">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[11px] font-mono uppercase tracking-widest px-2.5 py-1 rounded bg-teal-500/10 text-teal-600 dark:text-teal-400 font-bold">
                 RANKED #{userRank} OF {totalParticipants} ON THIS TEST
               </span>
-              <span className="text-[11px] font-mono px-2.5 py-1 rounded bg-orange-500/10 text-orange-600 font-bold">
-                Top {100 - percentile + 1}%
+              <span
+                className={`text-[11px] font-mono px-2.5 py-1 rounded font-bold ${
+                  didPass
+                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-red-500/15 text-red-500'
+                }`}
+              >
+                {didPass ? `PASSED (Pass Mark: ${passMark}%)` : `BELOW PASS MARK (${passMark}%)`}
               </span>
             </div>
 
             <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight mt-3">
               {result.percentage >= 85
-                ? 'Distinction Performance.'
-                : result.percentage >= 60
-                ? 'Solid Pass.'
-                : 'Needs Revision.'}
+                ? 'Distinction Performance! 🎉'
+                : didPass
+                ? 'Congratulations, You Passed! 👏'
+                : 'Keep Pushing — Review & Retry.'}
             </h1>
             <p className="text-sm text-zinc-500 mt-1">{result.title}</p>
           </div>
@@ -202,7 +447,7 @@ export default function ResultView({
 
             <div className="sm:px-3">
               <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-bold block">
-                Your Position
+                1st-Try Rank
               </span>
               <span className="font-mono text-2xl sm:text-3xl font-extrabold mt-1 block">
                 #{userRank}
@@ -229,7 +474,9 @@ export default function ResultView({
               <span className="font-mono text-2xl sm:text-3xl font-extrabold mt-1 block">
                 {result.correctCount}/{result.totalQuestions}
               </span>
-              <span className="text-[11px] text-zinc-500">Questions</span>
+              <span className="text-[11px] text-zinc-500">
+                Top {100 - percentile + 1}%
+              </span>
             </div>
           </div>
         </div>
@@ -292,44 +539,113 @@ export default function ResultView({
       </div>
 
       {/* Switcher: Per-Test Leaderboard vs. Question-by-Question Review */}
-      <div className="flex items-center gap-2 border-b border-zinc-200 dark:border-zinc-800 pb-3">
-        <button
-          onClick={() => setActiveResultTab('standings')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors ${
-            activeResultTab === 'standings'
-              ? 'bg-orange-600 text-white'
-              : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500'
-          }`}
-        >
-          <Trophy className="w-3.5 h-3.5" />
-          <span>This Exam's Leaderboard ({testStandings.length})</span>
-        </button>
+      <div className="flex items-center justify-between flex-wrap gap-2 border-b border-zinc-200 dark:border-zinc-800 pb-3">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveResultTab('standings')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors ${
+              activeResultTab === 'standings'
+                ? 'bg-orange-600 text-white'
+                : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500'
+            }`}
+          >
+            <Trophy className="w-3.5 h-3.5" />
+            <span>This Exam's Leaderboard ({testStandings.length})</span>
+          </button>
 
-        <button
-          onClick={() => setActiveResultTab('review')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors ${
-            activeResultTab === 'review'
-              ? 'bg-orange-600 text-white'
-              : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500'
-          }`}
-        >
-          <CheckCircle2 className="w-3.5 h-3.5" />
-          <span>Question Corrections ({result.questions.length})</span>
-        </button>
+          <button
+            onClick={() => setActiveResultTab('review')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors ${
+              activeResultTab === 'review'
+                ? 'bg-orange-600 text-white'
+                : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Question Corrections ({result.questions.length})</span>
+          </button>
+        </div>
+
+        <span className="text-[11px] font-mono text-zinc-400">
+          ★ Official Leaderboard logs 1st attempts only
+        </span>
       </div>
 
-      {/* ====================================================================
-          TAB 1: PER-TEST STANDINGS (Full Paginated & Pinned Personal Row)
-      ==================================================================== */}
+      {/* TAB 1: PER-TEST STANDINGS WITH TOP 3 PODIUM + 4TH+ LIST */}
       {activeResultTab === 'standings' ? (
-        <section className="space-y-4">
+        <section className="space-y-6">
+          {/* TOP 3 PODIUM CARDS */}
+          {standingsPage === 0 && !standingsSearch && topThreeInExam.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end pt-2">
+              {[
+                { rank: 2, item: topThreeInExam[1] },
+                { rank: 1, item: topThreeInExam[0] },
+                { rank: 3, item: topThreeInExam[2] }
+              ]
+                .filter((s) => Boolean(s.item))
+                .map(({ rank, item }) => {
+                  const isMe = item.name.toLowerCase() === user.fullName.toLowerCase();
+                  return (
+                    <div
+                      key={item.id}
+                      className={`rounded-3xl p-5 flex sm:flex-col items-center justify-between sm:justify-center text-left sm:text-center gap-3 ${
+                        rank === 1
+                          ? 'bg-gradient-to-b from-amber-500/20 via-orange-500/10 to-transparent border-2 border-amber-500/60 sm:py-7 order-1 sm:order-2 shadow-lg'
+                          : rank === 2
+                          ? 'bg-zinc-100/80 dark:bg-zinc-900/90 border border-zinc-300 dark:border-zinc-700 order-2 sm:order-1'
+                          : 'bg-orange-950/10 dark:bg-orange-950/30 border border-orange-500/30 order-3'
+                      }`}
+                    >
+                      <div className="flex sm:flex-col items-center gap-3 sm:gap-2">
+                        <div
+                          className={`flex items-center justify-center rounded-2xl ${
+                            rank === 1
+                              ? 'w-14 h-14 bg-gradient-to-br from-amber-400 to-orange-600 text-white shadow-md'
+                              : rank === 2
+                              ? 'w-11 h-11 bg-zinc-300 dark:bg-zinc-700 text-zinc-900 dark:text-white'
+                              : 'w-10 h-10 bg-amber-800 text-amber-100'
+                          }`}
+                        >
+                          {rank === 1 ? (
+                            <Trophy className="w-7 h-7" />
+                          ) : rank === 2 ? (
+                            <Medal className="w-5 h-5" />
+                          ) : (
+                            <Award className="w-5 h-5" />
+                          )}
+                        </div>
+                        <div>
+                          <span className="font-mono text-[10px] uppercase font-extrabold text-orange-600 dark:text-amber-400 block">
+                            #{rank} Place
+                          </span>
+                          <h4 className="font-extrabold text-sm sm:text-base">
+                            {item.name} {isMe && <span className="text-orange-600">(You)</span>}
+                          </h4>
+                          <span className="text-xs text-zinc-500 block">{item.dept}</span>
+                        </div>
+                      </div>
+
+                      <div className="text-right sm:text-center font-mono">
+                        <span className="text-xl font-extrabold text-orange-600 dark:text-amber-400 block">
+                          {item.score}%
+                        </span>
+                        <span className="text-xs text-teal-600 dark:text-teal-400">
+                          ⚡ {formatDuration(item.timeSecs)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h2 className="font-extrabold text-base">
-                Standings for {result.sittingTitle || result.title}
+                All Challengers — {result.sittingTitle || result.title}
               </h2>
               <p className="text-xs text-zinc-500">
-                Compare your accuracy and finish speed against everyone who sat for this exam.
+                Ranked by 1st-attempt accuracy and finish speed.
               </p>
             </div>
 
@@ -372,32 +688,13 @@ export default function ResultView({
             </div>
           </div>
 
-          {/* Pinned Personal Standing Banner */}
-          <div className="p-4 rounded-2xl bg-orange-500/10 border border-orange-500/30 flex items-center justify-between text-xs sm:text-sm">
-            <div className="flex items-center gap-3">
-              <span className="px-2.5 py-1 rounded-lg bg-orange-600 text-white font-mono text-xs font-bold">
-                YOUR RANK #{userRank}
-              </span>
-              <div>
-                <span className="font-extrabold block">{user.fullName} (You)</span>
-                <span className="text-xs text-zinc-500">{user.department}</span>
-              </div>
-            </div>
-            <div className="text-right font-mono">
-              <span className="font-extrabold text-orange-600 dark:text-orange-400 block">
-                {result.percentage}% ({result.correctCount}/{result.totalQuestions})
-              </span>
-              <span className="text-xs text-teal-600 dark:text-teal-400">
-                {formatDuration(result.timeSpentSeconds)}
-              </span>
-            </div>
-          </div>
-
           {/* Full Orderly Leaderboard Table */}
           <div className="divide-y divide-zinc-200 dark:divide-zinc-800 border-y border-zinc-200 dark:border-zinc-800">
             {paginatedTestStandings.map((row) => {
               const globalRank = testStandings.findIndex((item) => item.id === row.id) + 1;
-              const isMe = row.id === result.entryId || row.name === user.fullName;
+              const isMe =
+                row.id === result.entryId ||
+                row.name.toLowerCase() === user.fullName.toLowerCase();
 
               return (
                 <div
@@ -410,9 +707,11 @@ export default function ResultView({
                     <span
                       className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${
                         globalRank === 1
-                          ? 'bg-orange-600 text-white'
-                          : globalRank <= 3
-                          ? 'bg-teal-600 text-white'
+                          ? 'bg-amber-500 text-black'
+                          : globalRank === 2
+                          ? 'bg-zinc-300 dark:bg-zinc-700 text-zinc-900 dark:text-white'
+                          : globalRank === 3
+                          ? 'bg-orange-800 text-amber-100'
                           : 'bg-zinc-200 dark:bg-zinc-900 text-zinc-500'
                       }`}
                     >
@@ -440,9 +739,7 @@ export default function ResultView({
           </div>
         </section>
       ) : (
-        /* ====================================================================
-            TAB 2: PAGINATED 3-PER-PAGE QUESTION CORRECTIONS
-        ==================================================================== */
+        /* TAB 2: PAGINATED 3-PER-PAGE QUESTION CORRECTIONS */
         <section className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-2">
@@ -555,7 +852,7 @@ export default function ResultView({
                           }`}
                         >
                           <span className="font-mono font-bold">
-                            {['A', 'B', 'C', 'D'][optIdx]}.
+                            {['A', 'B', 'C', 'D', 'E'][optIdx]}.
                           </span>
                           <span>{opt}</span>
                         </div>

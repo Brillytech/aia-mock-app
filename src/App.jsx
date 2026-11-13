@@ -17,6 +17,8 @@ import {
   Zap,
   Layers,
   Trophy,
+  Medal,
+  Award,
   Bookmark,
   Bell,
   User,
@@ -43,8 +45,10 @@ import {
   Search,
   LayoutGrid,
   Share2,
+  Link2,
   Check,
-  X
+  X,
+  FileCheck2
 } from 'lucide-react';
 
 const HERO_BG = {
@@ -104,15 +108,19 @@ const INITIAL_SITTINGS = [
     allowedModes: ['PRACTICE'],
     targetCourse: 'Physiotherapy',
     priceNaira: 0,
+    retakePriceNaira: 500,
     requiresCode: false,
     durationMins: 3,
     questionCount: 5,
     passMark: 50,
+    maxTabSwitches: 3,
     isFeatured: true,
     shuffleQuestions: true,
     allowedCourses: ['ana-301'],
     status: 'OPEN',
     resultsReleased: true,
+    releaseMode: 'INSTANT',
+    releaseAt: null,
     description: 'Rapid 3-minute recall sprint on spinal pathways and ascending tracts.',
     createdAt: '2026-11-05T10:00:00Z'
   },
@@ -123,15 +131,19 @@ const INITIAL_SITTINGS = [
     allowedModes: ['PRACTICE'],
     targetCourse: 'All Courses',
     priceNaira: 0,
+    retakePriceNaira: 0,
     requiresCode: false,
     durationMins: 5,
     questionCount: 10,
     passMark: 50,
+    maxTabSwitches: 3,
     isFeatured: false,
     shuffleQuestions: true,
     allowedCourses: ['eng-101'],
     status: 'OPEN',
     resultsReleased: true,
+    releaseMode: 'INSTANT',
+    releaseAt: null,
     description: 'Fast-paced vocabulary, concord, and comprehension speed drill.',
     createdAt: '2026-11-06T08:00:00Z'
   },
@@ -142,15 +154,19 @@ const INITIAL_SITTINGS = [
     allowedModes: ['OFFICIAL'],
     targetCourse: 'Physiotherapy',
     priceNaira: 1000,
+    retakePriceNaira: 1000,
     requiresCode: true,
     durationMins: 15,
     questionCount: 20,
     passMark: 60,
+    maxTabSwitches: 3,
     isFeatured: true,
     shuffleQuestions: true,
     allowedCourses: ['ana-301', 'phs-204', 'msk-402'],
     status: 'OPEN',
     resultsReleased: true,
+    releaseMode: 'INSTANT',
+    releaseAt: null,
     description: 'Standard proctored exam conditions with verified leaderboard entry.',
     createdAt: '2026-11-06T12:00:00Z'
   },
@@ -161,15 +177,19 @@ const INITIAL_SITTINGS = [
     allowedModes: ['BUNDLED'],
     targetCourse: 'All Courses',
     priceNaira: 1500,
+    retakePriceNaira: 1500,
     requiresCode: true,
     durationMins: 30,
     questionCount: 40,
     passMark: 55,
+    maxTabSwitches: 3,
     isFeatured: true,
     shuffleQuestions: true,
     allowedCourses: ['ana-301', 'phs-204', 'eng-101', 'mth-101'],
     status: 'OPEN',
     resultsReleased: true,
+    releaseMode: 'INSTANT',
+    releaseAt: null,
     description: 'Combined multi-course marathon sitting across core subjects.',
     createdAt: '2026-11-07T09:00:00Z'
   }
@@ -179,13 +199,13 @@ const INITIAL_CODES = [
   {
     id: 'c_demo_1',
     code: 'AIA-2026-VIP',
-    sittingId: 'sit-mock-1',
-    sittingTitle: 'AIA Official Pre-Clinical Mock 1.0',
-    mode: 'OFFICIAL',
+    sittingId: 'ALL',
+    sittingTitle: 'Universal Single-Use Pass (All Exams)',
+    mode: 'ALL',
     priceNaira: 1000,
     assignedTo: 'Demo Candidate',
     status: 'LIVE',
-    maxUses: 10,
+    maxUses: 1,
     usedCount: 0,
     createdAt: 'Today'
   }
@@ -302,6 +322,7 @@ const INITIAL_STANDINGS = [
   {
     id: 's1',
     name: 'Darasimi A.',
+    email: 'darasimi@student.edu.ng',
     institution: 'Lagos State University (LASU / LASUCOM)',
     dept: 'Physiotherapy',
     sittingId: 'sit-mock-1',
@@ -313,6 +334,7 @@ const INITIAL_STANDINGS = [
   {
     id: 's2',
     name: 'Korede A.',
+    email: 'korede@student.edu.ng',
     institution: 'University of Lagos (UNILAG)',
     dept: 'Medicine & Surgery (MBBS)',
     sittingId: 'sit-mock-1',
@@ -324,6 +346,7 @@ const INITIAL_STANDINGS = [
   {
     id: 's3',
     name: 'Zainab O.',
+    email: 'zainab@student.edu.ng',
     institution: 'University of Ibadan (UI)',
     dept: 'Physiotherapy',
     sittingId: 'sit-mock-1',
@@ -335,6 +358,7 @@ const INITIAL_STANDINGS = [
   {
     id: 's4',
     name: 'Chibuike N.',
+    email: 'chibuike@student.edu.ng',
     institution: 'University of Nigeria, Nsukka (UNN)',
     dept: 'Nursing Science',
     sittingId: 'sit-drill',
@@ -346,6 +370,7 @@ const INITIAL_STANDINGS = [
   {
     id: 's5',
     name: 'Toluwalase B.',
+    email: 'tolu@student.edu.ng',
     institution: 'Obafemi Awolowo University (OAU), Ile-Ife',
     dept: 'Computer Science',
     sittingId: 'sit-combo-1',
@@ -362,6 +387,127 @@ function sittingMatchesCategory(sit, categoryMode) {
     return sit.allowedModes.includes(categoryMode);
   }
   return sit.mode === categoryMode;
+}
+
+function getUniqueFirstAttempts(rows, isSingleSitting = false) {
+  const seen = new Set();
+  const unique = [];
+  const chronological = [...rows].sort((a, b) =>
+    String(a.createdAt || a.id).localeCompare(String(b.createdAt || b.id))
+  );
+  for (const r of chronological) {
+    const personKey = (r.userId || r.email || r.name || '').toLowerCase().trim();
+    const key = isSingleSitting ? personKey : `${personKey}__${r.sittingId || ''}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(r);
+    }
+  }
+  return unique.sort((a, b) => (b.score !== a.score ? b.score - a.score : a.timeSecs - b.timeSecs));
+}
+
+// ============================================================================
+// OVERFLOW-PROOF PODIUM FOR 1ST, 2ND, AND 3RD PLACE
+// ============================================================================
+function TopThreePodium({ topThree, formatSecs, currentUserName }) {
+  if (!topThree || topThree.length === 0) return null;
+
+  const slots = [
+    { rank: 2, item: topThree[1], isCenter: false },
+    { rank: 1, item: topThree[0], isCenter: true },
+    { rank: 3, item: topThree[2], isCenter: false }
+  ].filter((s) => Boolean(s.item));
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 items-stretch sm:items-end pt-2 pb-1">
+      {slots.map(({ rank, item, isCenter }) => {
+        const isMe =
+          currentUserName && item.name.toLowerCase() === currentUserName.toLowerCase();
+
+        const cardStyle =
+          rank === 1
+            ? 'bg-gradient-to-b from-amber-500/20 via-orange-500/10 to-transparent border-2 border-amber-500/60 shadow-xl shadow-orange-500/10 sm:py-5 order-1 sm:order-2'
+            : rank === 2
+            ? 'bg-gradient-to-b from-zinc-300/25 via-zinc-200/10 to-transparent dark:from-zinc-700/30 border border-zinc-300 dark:border-zinc-700 sm:py-4 order-2 sm:order-1'
+            : 'bg-gradient-to-b from-orange-700/20 via-orange-800/5 to-transparent border border-orange-500/30 sm:py-4 order-3';
+
+        const iconWrap =
+          rank === 1
+            ? 'w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-600 text-white shadow-lg shadow-orange-500/30'
+            : rank === 2
+            ? 'w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-br from-zinc-200 to-zinc-400 dark:from-zinc-600 dark:to-zinc-800 text-zinc-900 dark:text-white'
+            : 'w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-700 to-orange-900 text-amber-100';
+
+        return (
+          <div
+            key={item.id}
+            className={`relative overflow-hidden rounded-3xl p-4 flex sm:flex-col items-center justify-between sm:justify-center text-left sm:text-center gap-3 min-w-0 max-w-full ${cardStyle}`}
+          >
+            <div className="flex sm:flex-col items-center gap-3 sm:gap-2 min-w-0 flex-1 sm:w-full">
+              <div className="relative flex-shrink-0">
+                <div className={`flex items-center justify-center ${iconWrap}`}>
+                  {rank === 1 ? (
+                    <Trophy className="w-6 h-6 sm:w-7 sm:h-7" />
+                  ) : rank === 2 ? (
+                    <Medal className="w-5 h-5" />
+                  ) : (
+                    <Award className="w-5 h-5" />
+                  )}
+                </div>
+                <span
+                  className={`absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full font-mono text-[10px] font-extrabold ${
+                    rank === 1
+                      ? 'bg-black text-amber-400 border border-amber-400'
+                      : rank === 2
+                      ? 'bg-zinc-800 text-white'
+                      : 'bg-orange-950 text-orange-300'
+                  }`}
+                >
+                  #{rank}
+                </span>
+              </div>
+
+              <div className="min-w-0 flex-1 sm:w-full px-1">
+                <div className="flex items-center sm:justify-center gap-1 min-w-0">
+                  <h4
+                    className={`font-extrabold truncate max-w-full ${
+                      isCenter ? 'text-sm sm:text-base' : 'text-xs sm:text-sm'
+                    }`}
+                    title={item.name}
+                  >
+                    {item.name}
+                  </h4>
+                  {isMe && (
+                    <span className="flex-shrink-0 text-[9px] font-mono px-1.5 py-0.5 rounded bg-orange-600 text-white font-bold">
+                      YOU
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-zinc-500 truncate max-w-full" title={item.dept}>
+                  {item.dept}
+                </p>
+              </div>
+            </div>
+
+            <div className="text-right sm:text-center font-mono sm:pt-1 flex-shrink-0">
+              <span
+                className={`font-extrabold block ${
+                  rank === 1
+                    ? 'text-lg sm:text-xl text-orange-600 dark:text-amber-400'
+                    : 'text-base text-orange-600 dark:text-orange-400'
+                }`}
+              >
+                {item.score}%
+              </span>
+              <span className="text-[11px] text-teal-600 dark:text-teal-400 font-semibold whitespace-nowrap">
+                ⚡ {formatSecs(item.timeSecs)}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export default function App() {
@@ -381,7 +527,7 @@ export default function App() {
     department: 'Physiotherapy'
   });
 
-  // Main Tabs: 'tests' | 'all-mocks' | 'leaderboard' | 'saved' | 'profile'
+  // Main Tabs: 'tests' | 'all-mocks' | 'my-results' | 'leaderboard' | 'saved' | 'profile'
   const [activeTab, setActiveTab] = useState('tests');
   const [selectedMode, setSelectedMode] = useState('PRACTICE');
   const [selectedSittingId, setSelectedSittingId] = useState('sit-drill');
@@ -389,19 +535,29 @@ export default function App() {
   const [examPage, setExamPage] = useState(0);
   const EXAMS_PER_PAGE = 4;
 
-  // General Homepage Standings Filter ('students' | 'courses')
-  const [homeRankingTab, setHomeRankingTab] = useState('students');
+  const [pendingSharedExamId, setPendingSharedExamId] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('exam') || null;
+  });
 
-  // Full Standings Page State & Pagination
-  const [rankingFilter, setRankingFilter] = useState('overall'); // 'overall' | 'courses'
+  const [userAttemptHistory, setUserAttemptHistory] = useState(() => {
+    const saved = localStorage.getItem('aia_user_attempt_history');
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  // Persisted Full Student Scripts so candidates can re-open Held Results later without needing a code!
+  const [studentResultsHistory, setStudentResultsHistory] = useState(() => {
+    const saved = localStorage.getItem('aia_student_results_history');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [homeRankingTab, setHomeRankingTab] = useState('students');
+  const [rankingFilter, setRankingFilter] = useState('overall');
   const [standingsPage, setStandingsPage] = useState(0);
   const STANDINGS_PER_PAGE = 8;
 
-  // Top-Right Leaderboard Badge Modal (Inspect Any Exam or Category Rankings Before Attempting)
   const [leaderboardModalConfig, setLeaderboardModalConfig] = useState(null);
-  // { type: 'exam' | 'category', id: string, title: string, subtitle: string }
 
-  // "All Exams" Directory Filters
   const [mockDirectorySearch, setMockDirectorySearch] = useState('');
   const [mockDirectoryCategory, setMockDirectoryCategory] = useState('ALL');
   const [mockDirectoryCourse, setMockDirectoryCourse] = useState('ALL');
@@ -459,9 +615,9 @@ export default function App() {
     const saved = localStorage.getItem('aia_reports');
     return saved ? JSON.parse(saved) : [];
   });
-  const [notifications, setNotifications] = useState([
+  const [notifications] = useState([
     { id: 'n1', title: 'AIA Official Mock 1.0 is open for attempts', time: 'Just now' },
-    { id: 'n2', title: 'Click the Trophy badge on any exam to view its standings', time: '1h ago' }
+    { id: 'n2', title: 'Re-open any past or held exam result from "My Results"', time: '1h ago' }
   ]);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
 
@@ -474,19 +630,6 @@ export default function App() {
 
   const [activeExamSession, setActiveExamSession] = useState(null);
   const [lastExamResult, setLastExamResult] = useState(null);
-
-  // Deep-link `?exam=<sitting_id>` handler
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const sharedExamId = params.get('exam');
-    if (sharedExamId && sittings.length > 0) {
-      const target = sittings.find((s) => s.id === sharedExamId);
-      if (target) {
-        setSelectedMode(target.mode);
-        setSelectedSittingId(target.id);
-      }
-    }
-  }, [sittings]);
 
   // Supabase Auth & Cloud Sync
   useEffect(() => {
@@ -534,15 +677,26 @@ export default function App() {
           { data: dbCodes },
           { data: dbQuestions },
           { data: dbResults },
-          { data: dbAnns }
+          { data: dbAnns },
+          { data: dbSettings }
         ] = await Promise.all([
           supabase.from('courses').select('*').order('code'),
           supabase.from('sittings').select('*').order('created_at', { ascending: false }),
           supabase.from('access_codes').select('*').order('created_at', { ascending: false }),
           supabase.from('questions').select('*').order('created_at', { ascending: false }),
-          supabase.from('exam_results').select('*'),
-          supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(3)
+          supabase.from('exam_results').select('*').order('created_at', { ascending: true }),
+          supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(3),
+          supabase.from('platform_settings').select('*').eq('id', 1).maybeSingle()
         ]);
+
+        if (dbSettings) {
+          setPlatformConfig((prev) => ({
+            ...prev,
+            whatsappNumber: dbSettings.whatsapp_number || prev.whatsappNumber,
+            organiserEmail: dbSettings.organiser_email || prev.organiserEmail,
+            adminPin: dbSettings.admin_pin || prev.adminPin
+          }));
+        }
 
         if (dbCourses?.length) setCourses(dbCourses);
         if (dbSittings?.length) {
@@ -553,16 +707,21 @@ export default function App() {
               mode: s.mode,
               allowedModes: s.allowed_modes || [s.mode],
               targetCourse: s.target_course || 'All Courses',
-              priceNaira: s.price_naira,
+              priceNaira: s.price_naira || 0,
+              retakePriceNaira: s.retake_price_naira || 0,
               requiresCode: s.requires_code,
               durationMins: s.duration_mins,
               questionCount: s.question_count,
               passMark: s.pass_mark || 50,
+              maxTabSwitches: s.max_tab_switches || 3,
               isFeatured: Boolean(s.is_featured),
               shuffleQuestions: s.shuffle_questions !== false,
               allowedCourses: s.allowed_courses || [],
               status: s.status,
-              resultsReleased: s.results_released,
+              resultsReleased: s.results_released !== false,
+              releaseMode:
+                s.release_mode || (s.results_released === false ? 'HELD' : 'INSTANT'),
+              releaseAt: s.release_at || null,
               description: s.description,
               createdAt: s.created_at
             }))
@@ -573,9 +732,9 @@ export default function App() {
             dbCodes.map((c) => ({
               id: c.id,
               code: c.code,
-              sittingId: c.sitting_id,
-              sittingTitle: c.sitting_title,
-              mode: c.mode,
+              sittingId: c.sitting_id || 'ALL',
+              sittingTitle: c.sitting_title || 'Universal Pass (All Exams)',
+              mode: c.mode || 'ALL',
               priceNaira: c.price_naira,
               assignedTo: c.assigned_to,
               status: c.status,
@@ -599,20 +758,25 @@ export default function App() {
           );
         }
         if (dbResults?.length) {
-          const sorted = dbResults
-            .map((r) => ({
-              id: r.id,
-              name: r.student_name,
-              institution: r.institution || 'Lagos State University (LASU / LASUCOM)',
-              dept: r.department,
-              sittingId: r.sitting_id || 'sit-mock-1',
-              sittingTitle: r.title || 'Mock Assessment',
-              score: r.percentage,
-              timeSecs: r.time_spent_seconds,
-              mode: r.mode
-            }))
-            .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.timeSecs - b.timeSecs));
-          setStandings(sorted);
+          const mapped = dbResults.map((r) => ({
+            id: r.id,
+            userId: r.user_id,
+            email: r.email || '',
+            name: r.student_name,
+            institution: r.institution || 'Lagos State University (LASU / LASUCOM)',
+            dept: r.department,
+            sittingId: r.sitting_id || 'sit-mock-1',
+            sittingTitle: r.title || 'Mock Assessment',
+            score: r.percentage,
+            totalQuestions: r.total_questions || 20,
+            correctCount: r.correct_count || 0,
+            timeSecs: r.time_spent_seconds,
+            mode: r.mode,
+            answers: r.answers_json || {},
+            questions: r.questions_json || [],
+            createdAt: r.created_at
+          }));
+          setStandings(getUniqueFirstAttempts(mapped, false));
         }
         if (dbAnns?.length) {
           setAnnouncements(
@@ -673,12 +837,161 @@ export default function App() {
   }, [flaggedReports]);
 
   useEffect(() => {
+    localStorage.setItem('aia_user_attempt_history', JSON.stringify(userAttemptHistory));
+  }, [userAttemptHistory]);
+
+  useEffect(() => {
+    localStorage.setItem('aia_student_results_history', JSON.stringify(studentResultsHistory));
+  }, [studentResultsHistory]);
+
+  useEffect(() => {
     if (announcements.length <= 1) return;
     const timer = setInterval(() => {
       setAnnSlide((prev) => (prev + 1) % announcements.length);
     }, 6000);
     return () => clearInterval(timer);
   }, [announcements.length]);
+
+  // Retrieve a student's saved result for a specific sitting (from local history or cloud standings)
+  const getSavedResultForSitting = (sitId) => {
+    if (!user || !sitId) return null;
+    const myEmail = (user.email || '').toLowerCase().trim();
+    const myName = (user.fullName || '').toLowerCase().trim();
+
+    const localMatch = studentResultsHistory.find(
+      (r) =>
+        String(r.sittingId) === String(sitId) &&
+        ((r.userEmail && r.userEmail.toLowerCase() === myEmail) ||
+          (r.userName && r.userName.toLowerCase() === myName))
+    );
+    if (localMatch) return localMatch;
+
+    const standingMatch = standings.find(
+      (s) =>
+        String(s.sittingId) === String(sitId) &&
+        ((s.email && myEmail && s.email.toLowerCase() === myEmail) ||
+          s.name.toLowerCase() === myName)
+    );
+
+    if (standingMatch) {
+      const sitObj = sittings.find((item) => String(item.id) === String(sitId));
+      const fallbackQs =
+        Array.isArray(standingMatch.questions) && standingMatch.questions.length > 0
+          ? standingMatch.questions
+          : questionBank.filter((q) => (sitObj?.allowedCourses || []).includes(q.courseId));
+      const finalQs = fallbackQs.length > 0 ? fallbackQs : questionBank;
+      const ansMap = standingMatch.answers || {};
+
+      return {
+        entryId: standingMatch.id,
+        sittingId: standingMatch.sittingId,
+        sittingTitle: standingMatch.sittingTitle,
+        title: standingMatch.sittingTitle,
+        mode: standingMatch.mode,
+        passMark: sitObj?.passMark || 50,
+        totalQuestions: standingMatch.totalQuestions || finalQs.length,
+        correctCount:
+          standingMatch.correctCount ||
+          Math.round((standingMatch.score / 100) * (standingMatch.totalQuestions || finalQs.length)),
+        percentage: standingMatch.score,
+        timeSpentSeconds: standingMatch.timeSecs,
+        answers: ansMap,
+        questions: finalQs,
+        missedQuestions: finalQs.filter((q) => ansMap[q.id] !== q.correctIndex),
+        isFirstAttempt: true,
+        attemptNumber: 1,
+        completedAt: standingMatch.createdAt || new Date().toISOString()
+      };
+    }
+
+    return null;
+  };
+
+  // All results belonging to the currently logged-in student
+  const myAllSavedResults = (() => {
+    if (!user) return [];
+    const map = new Map();
+    sittings.forEach((s) => {
+      const found = getSavedResultForSitting(s.id);
+      if (found) map.set(s.id, found);
+    });
+    studentResultsHistory.forEach((r) => {
+      const myEmail = (user.email || '').toLowerCase().trim();
+      const myName = (user.fullName || '').toLowerCase().trim();
+      if (
+        (r.userEmail && r.userEmail.toLowerCase() === myEmail) ||
+        (r.userName && r.userName.toLowerCase() === myName)
+      ) {
+        if (!map.has(r.sittingId)) map.set(r.sittingId, r);
+      }
+    });
+    return Array.from(map.values());
+  })();
+
+  const getUserAttemptsForSitting = (sitId) => {
+    if (!user || !sitId) return 0;
+    const userKey = (user.email || user.fullName || '').toLowerCase().trim();
+    const localCount = Number(userAttemptHistory[`${userKey}__${sitId}`] || 0);
+    const hasSavedResult = Boolean(getSavedResultForSitting(sitId));
+    return Math.max(localCount, hasSavedResult ? 1 : 0);
+  };
+
+  const getSittingGateDetails = (sit) => {
+    if (!sit) return { needsCode: false, effectivePrice: 0, isPaidRetake: false, attemptsMade: 0 };
+    const attemptsMade = getUserAttemptsForSitting(sit.id);
+    const baseRequiresCode = Boolean(sit.requiresCode && Number(sit.priceNaira || 0) > 0);
+    const retakeFee = Number(sit.retakePriceNaira || 0);
+
+    if (attemptsMade === 0) {
+      return {
+        needsCode: baseRequiresCode,
+        effectivePrice: baseRequiresCode ? Number(sit.priceNaira || 0) : 0,
+        isPaidRetake: false,
+        attemptsMade
+      };
+    }
+
+    if (retakeFee > 0 || baseRequiresCode) {
+      return {
+        needsCode: true,
+        effectivePrice: retakeFee > 0 ? retakeFee : Number(sit.priceNaira || 0),
+        isPaidRetake: !baseRequiresCode && retakeFee > 0,
+        attemptsMade
+      };
+    }
+
+    return { needsCode: false, effectivePrice: 0, isPaidRetake: false, attemptsMade };
+  };
+
+  // DEEP LINKING: If student already took this exam, open their result directly (no code needed!); otherwise open code gate or exam
+  useEffect(() => {
+    if (!pendingSharedExamId || sittings.length === 0) return;
+
+    const targetExam = sittings.find((s) => String(s.id) === String(pendingSharedExamId));
+    if (targetExam) {
+      setSelectedMode(targetExam.mode);
+      setSelectedSittingId(targetExam.id);
+      setActiveTab('tests');
+
+      if (user) {
+        const existingResult = getSavedResultForSitting(targetExam.id);
+        if (existingResult) {
+          setLastExamResult(existingResult);
+        } else {
+          setEnteredCode('');
+          setCodeGateError('');
+          const gate = getSittingGateDetails(targetExam);
+          if (gate.needsCode) {
+            setShowCodeGateModal(true);
+          } else {
+            launchExamRoomForSitting(targetExam);
+          }
+        }
+        setPendingSharedExamId(null);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
+  }, [pendingSharedExamId, sittings, user]);
 
   const logAdminAction = (action, target = '') => {
     setAuditLogs((prev) => [
@@ -731,13 +1044,27 @@ export default function App() {
   const handleCopyShareableExamLink = (e, sit) => {
     e.stopPropagation();
     const shareUrl = `${window.location.origin}/?exam=${sit.id}`;
-    const shareText = `📚 Take "${sit.title}" (${sit.mode}) on AIA Academy:\n${shareUrl}`;
-    navigator.clipboard.writeText(shareText);
+    navigator.clipboard.writeText(shareUrl);
     setCopiedExamLinkId(sit.id);
     setTimeout(() => setCopiedExamLinkId(null), 2000);
   };
 
-  // Open the Per-Exam or Per-Category Leaderboard Modal when clicking the top-right Trophy badge
+  const handleNativeShareExam = async (e, sit) => {
+    e.stopPropagation();
+    const shareUrl = `${window.location.origin}/?exam=${sit.id}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: sit.title,
+          text: `Attempt "${sit.title}" on AIA Academy`,
+          url: shareUrl
+        });
+        return;
+      } catch (err) {}
+    }
+    handleCopyShareableExamLink(e, sit);
+  };
+
   const handleOpenLeaderboardBadge = (e, config) => {
     e.stopPropagation();
     setLeaderboardModalConfig(config);
@@ -854,7 +1181,6 @@ export default function App() {
     setLastExamResult(null);
   };
 
-  // Active Exams in Selected Category (Replaces the redundant "Select Subject" list!)
   const liveStudentSittings = sittings.filter((s) => s.status === 'OPEN');
   const examsInSelectedCategory = liveStudentSittings.filter((s) => {
     const inCat = sittingMatchesCategory(s, selectedMode);
@@ -871,6 +1197,9 @@ export default function App() {
     liveStudentSittings[0] ||
     INITIAL_SITTINGS[0];
 
+  const activeSittingGate = getSittingGateDetails(activeSittingForMode);
+  const activeSittingSavedResult = getSavedResultForSitting(activeSittingForMode?.id);
+
   const totalExamPages = Math.max(1, Math.ceil(examsInSelectedCategory.length / EXAMS_PER_PAGE));
   const visibleExamsInSlot = examsInSelectedCategory.slice(
     examPage * EXAMS_PER_PAGE,
@@ -885,7 +1214,8 @@ export default function App() {
     }
     if (launchImmediately) {
       setTimeout(() => {
-        if (sit.requiresCode) {
+        const gate = getSittingGateDetails(sit);
+        if (gate.needsCode) {
           setEnteredCode('');
           setCodeGateError('');
           setShowCodeGateModal(true);
@@ -901,7 +1231,8 @@ export default function App() {
       alert(`This exam (${activeSittingForMode.title}) is currently ${activeSittingForMode.status}.`);
       return;
     }
-    if (activeSittingForMode.requiresCode) {
+    const gate = getSittingGateDetails(activeSittingForMode);
+    if (gate.needsCode) {
       setEnteredCode('');
       setCodeGateError('');
       setShowCodeGateModal(true);
@@ -910,39 +1241,58 @@ export default function App() {
     }
   };
 
+  // UNIVERSAL 1-USE CODE VERIFICATION (Works across all paid sittings!)
   const handleVerifyAccessCode = async (e) => {
     e.preventDefault();
+    setCodeGateError('');
     const cleanInput = enteredCode.trim().toUpperCase();
+
+    // 1. Server-Side Universal Verification via Supabase RPC
+    if (isSupabaseConfigured && supabase) {
+      const { data: rpcResult, error: rpcErr } = await supabase.rpc(
+        'verify_and_use_access_code',
+        {
+          input_code: cleanInput,
+          target_sitting_id: String(activeSittingForMode.id)
+        }
+      );
+
+      if (!rpcErr && rpcResult) {
+        if (!rpcResult.valid) {
+          setCodeGateError(
+            rpcResult.message ||
+              'Invalid or already used access code. Click the WhatsApp button below to get a new code.'
+          );
+          return;
+        }
+        setAccessCodes((prev) => prev.filter((c) => c.code.toUpperCase() !== cleanInput));
+        setShowCodeGateModal(false);
+        launchExamRoomForSitting(activeSittingForMode);
+        return;
+      }
+    }
+
+    // 2. Local Universal Fallback (Any LIVE unused code unlocks any sitting once)
     const matched = accessCodes.find(
       (c) =>
         c.code.toUpperCase() === cleanInput &&
         c.status === 'LIVE' &&
-        c.usedCount < c.maxUses &&
-        (c.sittingId === activeSittingForMode.id ||
-          c.mode === selectedMode ||
-          c.mode === 'ALL')
+        c.usedCount < c.maxUses
     );
 
     if (!matched) {
       setCodeGateError(
-        'Invalid, used, or expired access code for this exam. Click the WhatsApp button below to get a live code.'
+        'Invalid or already used access code. Click the WhatsApp button below to get a new code.'
       );
       return;
     }
 
-    const nextCount = matched.usedCount + 1;
-    const nextStatus = nextCount >= matched.maxUses ? 'USED' : 'LIVE';
-
-    setAccessCodes((prev) =>
-      prev.map((c) =>
-        c.code === matched.code ? { ...c, usedCount: nextCount, status: nextStatus } : c
-      )
-    );
-
+    // Immediately remove from local pool once used
+    setAccessCodes((prev) => prev.filter((c) => c.code !== matched.code));
     if (isSupabaseConfigured && supabase) {
       await supabase
         .from('access_codes')
-        .update({ used_count: nextCount, status: nextStatus })
+        .update({ used_count: matched.usedCount + 1, status: 'USED' })
         .eq('code', matched.code);
     }
 
@@ -978,6 +1328,10 @@ export default function App() {
       sittingId: targetSitting.id,
       sittingTitle: targetSitting.title,
       passMark: targetSitting.passMark || 50,
+      maxTabSwitches: targetSitting.maxTabSwitches || 3,
+      releaseMode:
+        targetSitting.releaseMode || (targetSitting.resultsReleased === false ? 'HELD' : 'INSTANT'),
+      releaseAt: targetSitting.releaseAt || null,
       mode: targetSitting.mode,
       title: customTitle || targetSitting.title,
       durationSeconds: (targetSitting.durationMins || 15) * 60,
@@ -988,48 +1342,101 @@ export default function App() {
   const handleCompleteExam = async (resultData) => {
     const finishedSittingId = activeExamSession?.sittingId || activeSittingForMode.id;
     const finishedSittingTitle = activeExamSession?.sittingTitle || activeSittingForMode.title;
+    const finishedPassMark = activeExamSession?.passMark || activeSittingForMode.passMark || 50;
 
     setActiveExamSession(null);
 
-    const newEntry = {
-      id: 'st_' + Date.now(),
-      name: user.fullName,
-      institution: user.institution || 'Lagos State University (LASU / LASUCOM)',
-      dept: user.department,
+    const alreadyOnLeaderboard = standings.some(
+      (s) =>
+        String(s.sittingId) === String(finishedSittingId) &&
+        (s.name.toLowerCase() === user.fullName.toLowerCase() ||
+          (s.email && user.email && s.email.toLowerCase() === user.email.toLowerCase()))
+    );
+
+    const isFirstAttempt = !alreadyOnLeaderboard && getUserAttemptsForSitting(finishedSittingId) === 0;
+
+    const userKey = (user.email || user.fullName || '').toLowerCase().trim();
+    const historyKey = `${userKey}__${finishedSittingId}`;
+    const nextAttemptNumber = Number(userAttemptHistory[historyKey] || 0) + 1;
+    setUserAttemptHistory((prev) => ({
+      ...prev,
+      [historyKey]: nextAttemptNumber
+    }));
+
+    const entryId = 'st_' + Date.now();
+
+    const fullResultRecord = {
+      ...resultData,
+      entryId,
+      userEmail: user.email,
+      userName: user.fullName,
       sittingId: finishedSittingId,
       sittingTitle: finishedSittingTitle,
-      score: resultData.percentage,
-      timeSecs: resultData.timeSpentSeconds,
-      mode: resultData.mode
+      passMark: finishedPassMark,
+      isFirstAttempt,
+      attemptNumber: nextAttemptNumber
     };
 
-    const updatedStandings = [...standings, newEntry].sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return a.timeSecs - b.timeSecs;
-    });
+    // Save full script in studentResultsHistory so they can always re-open held results later!
+    setStudentResultsHistory((prev) => [
+      fullResultRecord,
+      ...prev.filter(
+        (item) =>
+          !(
+            String(item.sittingId) === String(finishedSittingId) &&
+            (item.userEmail || '').toLowerCase() === (user.email || '').toLowerCase()
+          )
+      )
+    ]);
 
-    setStandings(updatedStandings);
-    setLastExamResult({
-      ...resultData,
-      sittingId: finishedSittingId,
-      sittingTitle: finishedSittingTitle
-    });
-
-    if (isSupabaseConfigured && supabase) {
-      await supabase.from('exam_results').insert({
-        user_id: user.id.startsWith('usr_') ? null : user.id,
-        student_name: user.fullName,
+    if (isFirstAttempt) {
+      const newEntry = {
+        id: entryId,
+        userId: user.id,
+        email: user.email,
+        name: user.fullName,
         institution: user.institution || 'Lagos State University (LASU / LASUCOM)',
-        department: user.department,
-        sitting_id: finishedSittingId,
+        dept: user.department,
+        sittingId: finishedSittingId,
+        sittingTitle: finishedSittingTitle,
+        score: resultData.percentage,
+        totalQuestions: resultData.totalQuestions,
+        correctCount: resultData.correctCount,
+        timeSecs: resultData.timeSpentSeconds,
         mode: resultData.mode,
-        title: finishedSittingTitle,
-        total_questions: resultData.totalQuestions,
-        correct_count: resultData.correctCount,
-        percentage: resultData.percentage,
-        time_spent_seconds: resultData.timeSpentSeconds
+        answers: resultData.answers,
+        questions: resultData.questions,
+        createdAt: new Date().toISOString()
+      };
+
+      const updatedStandings = [...standings, newEntry].sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return a.timeSecs - b.timeSecs;
       });
+
+      setStandings(updatedStandings);
+
+      if (isSupabaseConfigured && supabase) {
+        await supabase.from('exam_results').insert({
+          user_id: user.id.startsWith('usr_') ? null : user.id,
+          email: user.email,
+          student_name: user.fullName,
+          institution: user.institution || 'Lagos State University (LASU / LASUCOM)',
+          department: user.department,
+          sitting_id: finishedSittingId,
+          mode: resultData.mode,
+          title: finishedSittingTitle,
+          total_questions: resultData.totalQuestions,
+          correct_count: resultData.correctCount,
+          percentage: resultData.percentage,
+          time_spent_seconds: resultData.timeSpentSeconds,
+          answers_json: resultData.answers || {},
+          questions_json: resultData.questions || []
+        });
+      }
     }
+
+    setLastExamResult(fullResultRecord);
   };
 
   const handleToggleBookmark = (questionObj) => {
@@ -1041,7 +1448,9 @@ export default function App() {
   };
 
   const getWhatsAppPaymentUrl = () => {
-    const message = `Hello AIA Academy Organiser, I want to pay ₦${activeSittingForMode.priceNaira.toLocaleString()} for an Access Code.\n\n• Candidate: ${user?.fullName}\n• Course of Study: ${user?.department}\n• Exam: ${activeSittingForMode.title} (${selectedMode})`;
+    const feeToPay = activeSittingGate.effectivePrice || activeSittingForMode.priceNaira || 0;
+    const attemptTag = activeSittingGate.isPaidRetake ? 'Retake Access Code' : 'Universal Access Code';
+    const message = `Hello AIA Academy Organiser, I want to pay ₦${feeToPay.toLocaleString()} for a ${attemptTag}.\n\n• Candidate: ${user?.fullName}\n• Course of Study: ${user?.department}\n• Exam: ${activeSittingForMode.title} (${selectedMode})`;
     const phone = (platformConfig.whatsappNumber || '2348000000000').replace(/\D/g, '');
     return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
   };
@@ -1070,7 +1479,6 @@ export default function App() {
       return String(b.createdAt || b.id).localeCompare(String(a.createdAt || a.id));
     });
 
-  // Course Standings Aggregation
   const deptRankings = Object.values(
     standings.reduce((acc, row) => {
       if (!acc[row.dept]) acc[row.dept] = { dept: row.dept, totalScore: 0, count: 0 };
@@ -1099,15 +1507,15 @@ export default function App() {
     (savedPage + 1) * EXAMS_PER_PAGE
   );
 
-  // Compute rows for the Per-Exam / Per-Category Leaderboard Badge Modal
   const modalLeaderboardRows = leaderboardModalConfig
-    ? standings
-        .filter((s) =>
+    ? getUniqueFirstAttempts(
+        standings.filter((s) =>
           leaderboardModalConfig.type === 'exam'
             ? s.sittingId === leaderboardModalConfig.id
             : s.mode === leaderboardModalConfig.id
-        )
-        .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.timeSecs - b.timeSecs))
+        ),
+        leaderboardModalConfig.type === 'exam'
+      )
     : [];
 
   const activeAnnouncement = announcements[annSlide] || announcements[0] || null;
@@ -1116,6 +1524,10 @@ export default function App() {
   // 1. LOCKED AUTHENTICATION GATE
   // ============================================================================
   if (!user) {
+    const sharedSittingPreview = pendingSharedExamId
+      ? sittings.find((s) => String(s.id) === String(pendingSharedExamId))
+      : null;
+
     return (
       <div className="min-h-screen flex flex-col justify-between">
         <header className="w-full max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between border-b border-zinc-200/80 dark:border-zinc-900">
@@ -1132,6 +1544,20 @@ export default function App() {
         <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
           <div className="lg:col-span-5">
             <div className="app-surface rounded-3xl p-6 sm:p-8 space-y-6">
+              {sharedSittingPreview && (
+                <div className="p-3.5 rounded-2xl bg-orange-500/10 border border-orange-500/30 flex items-center gap-3 text-xs">
+                  <Clock className="w-5 h-5 text-orange-600 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <span className="font-mono text-[10px] uppercase font-bold text-orange-600 block">
+                      Direct Exam Invite Link
+                    </span>
+                    <span className="font-bold text-zinc-900 dark:text-white truncate block">
+                      Sign in to open "{sharedSittingPreview.title}"
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 p-1 rounded-2xl bg-zinc-100 dark:bg-zinc-900">
                 <button
                   type="button"
@@ -1276,7 +1702,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="lg:col-span-7 space-y-6">
+          <div className="lg:col-span-7 space-y-6 min-w-0">
             <div className="relative overflow-hidden rounded-3xl p-6 sm:p-8 text-white shadow-2xl border border-white/20 bg-zinc-900">
               <img
                 src={HERO_BG.local}
@@ -1306,39 +1732,13 @@ export default function App() {
             <div className="border-t border-zinc-200 dark:border-zinc-800 pt-5">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-mono uppercase tracking-wider font-bold text-zinc-500">
-                  General Top 3 Standings
+                  General Top 3 Podium (1st Attempts)
                 </span>
                 <span className="text-xs font-mono font-bold text-teal-600 dark:text-teal-400">
                   Score + Speed
                 </span>
               </div>
-              <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                {standings.slice(0, 3).map((item, idx) => (
-                  <div key={item.id} className="py-3 flex items-center justify-between text-xs sm:text-sm">
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`w-6 h-6 rounded-lg font-mono text-xs font-bold flex items-center justify-center ${
-                          idx === 0
-                            ? 'bg-orange-600 text-white'
-                            : 'bg-zinc-200 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400'
-                        }`}
-                      >
-                        {idx + 1}
-                      </span>
-                      <div>
-                        <span className="font-bold block">{item.name}</span>
-                        <span className="text-xs text-zinc-500">{item.dept}</span>
-                      </div>
-                    </div>
-                    <div className="text-right font-mono">
-                      <span className="font-bold text-orange-600 block">{item.score}%</span>
-                      <span className="text-xs text-teal-600 dark:text-teal-400">
-                        {formatSecs(item.timeSecs)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <TopThreePodium topThree={standings.slice(0, 3)} formatSecs={formatSecs} />
             </div>
           </div>
         </main>
@@ -1368,77 +1768,22 @@ export default function App() {
   }
 
   // ============================================================================
-  // 3. POST-EXAM RESULTS + DIRECT EXAM LEADERBOARD MODAL TRIGGER
+  // 3. POST-EXAM RESULTS VIEW
   // ============================================================================
   if (lastExamResult) {
-    const thisTestStandings = standings
-      .filter((s) => s.sittingId === lastExamResult.sittingId)
-      .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.timeSecs - b.timeSecs));
-
-    const myRankPos =
-      thisTestStandings.findIndex(
-        (s) =>
-          s.name.toLowerCase() === user.fullName.toLowerCase() &&
-          s.score === lastExamResult.percentage
-      ) + 1 || 1;
-
-    const avgForThisTest =
-      thisTestStandings.length > 0
-        ? Math.round(
-            thisTestStandings.reduce((acc, r) => acc + r.score, 0) / thisTestStandings.length
-          )
-        : lastExamResult.percentage;
-
     return (
-      <div>
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6">
-          <div className="app-surface rounded-3xl p-4 sm:p-5 border-orange-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5">
-              <div className="w-11 h-11 rounded-2xl bg-orange-600 text-white font-mono font-extrabold text-sm flex items-center justify-center flex-shrink-0">
-                #{myRankPos}
-              </div>
-              <div>
-                <span className="text-[10px] font-mono uppercase tracking-wider text-teal-600 dark:text-teal-400 font-bold block">
-                  Exam Standing • {lastExamResult.sittingTitle}
-                </span>
-                <h3 className="font-extrabold text-sm sm:text-base">
-                  Ranked #{myRankPos} of {thisTestStandings.length} challenger(s) in this exam
-                </h3>
-                <p className="text-xs text-zinc-500">
-                  Your Score: <strong>{lastExamResult.percentage}%</strong> vs. Exam Average:{' '}
-                  <strong>{avgForThisTest}%</strong>
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={(e) =>
-                handleOpenLeaderboardBadge(e, {
-                  type: 'exam',
-                  id: lastExamResult.sittingId,
-                  title: lastExamResult.sittingTitle,
-                  subtitle: `${lastExamResult.mode} Standings`
-                })
-              }
-              className="px-4 py-2.5 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-black text-xs font-bold flex items-center gap-1.5 self-start sm:self-center whitespace-nowrap"
-            >
-              <Trophy className="w-3.5 h-3.5 text-orange-500" />
-              <span>View Exam Leaderboard</span>
-            </button>
-          </div>
-        </div>
-
-        <ResultView
-          result={lastExamResult}
-          user={user}
-          bookmarks={bookmarks}
-          onToggleBookmark={handleToggleBookmark}
-          onRetryMistakes={(missedQs, oldTitle) =>
-            launchExamRoomForSitting(activeSittingForMode, missedQs, `Retry Mistakes: ${oldTitle}`)
-          }
-          onReturnHome={() => setLastExamResult(null)}
-        />
-      </div>
+      <ResultView
+        result={lastExamResult}
+        user={user}
+        sittings={sittings}
+        standings={standings}
+        bookmarks={bookmarks}
+        onToggleBookmark={handleToggleBookmark}
+        onRetryMistakes={(missedQs, oldTitle) =>
+          launchExamRoomForSitting(activeSittingForMode, missedQs, `Retry Mistakes: ${oldTitle}`)
+        }
+        onReturnHome={() => setLastExamResult(null)}
+      />
     );
   }
 
@@ -1448,7 +1793,7 @@ export default function App() {
   return (
     <div className="min-h-screen pb-24 md:pb-12">
       <header className="sticky top-0 z-40 glass-nav">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-2">
           <AiaLogo className="h-7 sm:h-8 flex-shrink-0" />
 
           <nav className="hidden md:flex items-center gap-1 p-1 rounded-2xl bg-zinc-100 dark:bg-zinc-900">
@@ -1458,6 +1803,11 @@ export default function App() {
                 id: 'all-mocks',
                 label: `All Exams (${liveStudentSittings.length})`,
                 icon: LayoutGrid
+              },
+              {
+                id: 'my-results',
+                label: `My Results (${myAllSavedResults.length})`,
+                icon: FileCheck2
               },
               { id: 'leaderboard', label: 'Standings', icon: Trophy },
               { id: 'saved', label: `Saved (${bookmarks.length})`, icon: Bookmark },
@@ -1469,7 +1819,7 @@ export default function App() {
                 <button
                   key={item.id}
                   onClick={() => handleTabChange(item.id)}
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap ${
                     isActive
                       ? 'bg-orange-600 text-white shadow-sm'
                       : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
@@ -1538,10 +1888,8 @@ export default function App() {
       <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-5 sm:pt-7">
         {activeTab === 'tests' ? (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-start">
-            <div className="lg:col-span-8 space-y-6">
-              {/* ====================================================================
-                  COMPACT HERO BANNER (Reduced Height, No CTA Button Inside)
-              ==================================================================== */}
+            <div className="lg:col-span-8 space-y-6 min-w-0">
+              {/* COMPACT HERO BANNER */}
               <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl px-5 py-4 sm:px-7 sm:py-5 text-white shadow-lg border border-orange-500/30 bg-zinc-900">
                 <img
                   src={HERO_BG.local}
@@ -1555,33 +1903,33 @@ export default function App() {
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-zinc-950/95 via-orange-950/80 to-orange-600/35" />
 
                 <div className="relative z-10 flex items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-white font-mono text-[10px] uppercase tracking-wider font-semibold">
-                      <Sparkles className="w-3 h-3 text-teal-300" />
-                      <span>{user.department}</span>
+                  <div className="space-y-1 min-w-0">
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-white font-mono text-[10px] uppercase tracking-wider font-semibold max-w-full truncate">
+                      <Sparkles className="w-3 h-3 text-teal-300 flex-shrink-0" />
+                      <span className="truncate">{user.department}</span>
                     </div>
-                    <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">
+                    <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white truncate">
                       Ready, {user.fullName.split(' ')[0]}?
                     </h1>
                     <p className="text-xs text-zinc-200 max-w-md leading-snug">
-                      Select a category below to update the exam list, or tap the trophy badge on any exam to inspect its leaderboard.
+                      Select an exam below to start, or click "View Result" on any completed sitting to check released scores without needing a code again.
                     </p>
                   </div>
 
-                  <div className="hidden sm:flex items-center gap-3 bg-black/50 backdrop-blur-md border border-white/15 px-4 py-2.5 rounded-2xl flex-shrink-0">
-                    <div className="text-right font-mono">
-                      <span className="text-[10px] uppercase text-zinc-300 block">Saved</span>
-                      <span className="text-base font-extrabold text-orange-400">
-                        {bookmarks.length} Qs
-                      </span>
-                    </div>
-                  </div>
+                  {myAllSavedResults.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleTabChange('my-results')}
+                      className="hidden sm:flex items-center gap-2 bg-black/60 hover:bg-black/80 backdrop-blur-md border border-white/20 px-4 py-2.5 rounded-2xl flex-shrink-0 text-xs font-bold transition-colors"
+                    >
+                      <FileCheck2 className="w-4 h-4 text-teal-400" />
+                      <span>My Results ({myAllSavedResults.length})</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* ====================================================================
-                  STEP 1: SELECT EXAM CATEGORY (With Top-Right Leaderboard Badge)
-              ==================================================================== */}
+              {/* STEP 1: SELECT EXAM CATEGORY */}
               <section className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">
@@ -1614,7 +1962,7 @@ export default function App() {
                           setExamPage(0);
                           if (modeSittings[0]) setSelectedSittingId(modeSittings[0].id);
                         }}
-                        className={`group cursor-pointer relative overflow-hidden text-left p-4 sm:p-5 rounded-3xl border ${
+                        className={`group cursor-pointer relative overflow-hidden text-left p-4 sm:p-5 rounded-3xl border min-w-0 ${
                           isSelected
                             ? vis.activeRing
                             : 'border-zinc-200/90 dark:border-zinc-800 hover:border-orange-500/50'
@@ -1636,10 +1984,10 @@ export default function App() {
                           className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${vis.accent} backdrop-blur-[1.5px]`}
                         />
 
-                        <div className="relative z-10">
-                          <div className="flex items-center justify-between mb-2.5">
+                        <div className="relative z-10 min-w-0">
+                          <div className="flex items-center justify-between gap-2 mb-2.5">
                             <div
-                              className={`w-8 h-8 rounded-xl flex items-center justify-center backdrop-blur-md ${
+                              className={`w-8 h-8 rounded-xl flex items-center justify-center backdrop-blur-md flex-shrink-0 ${
                                 isSelected
                                   ? 'bg-orange-600 text-white shadow-md shadow-orange-600/30'
                                   : 'bg-white/80 dark:bg-zinc-900/80 text-zinc-700 dark:text-zinc-200 border border-zinc-200/60 dark:border-zinc-700'
@@ -1648,7 +1996,6 @@ export default function App() {
                               <Icon className="w-4 h-4" />
                             </div>
 
-                            {/* Top-Right Clickable Leaderboard Badge for this Category */}
                             <button
                               type="button"
                               onClick={(e) =>
@@ -1656,10 +2003,10 @@ export default function App() {
                                   type: 'category',
                                   id: modeKey,
                                   title: `${vis.name} Leaderboard`,
-                                  subtitle: `All attempts under ${vis.name}`
+                                  subtitle: `1st-Attempt Standings under ${vis.name}`
                                 })
                               }
-                              className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2.5 py-1 rounded-full bg-black/70 hover:bg-orange-600 text-white backdrop-blur-md transition-colors"
+                              className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2.5 py-1 rounded-full bg-black/70 hover:bg-orange-600 text-white backdrop-blur-md transition-colors flex-shrink-0"
                               title={`View ${vis.name} Leaderboard`}
                             >
                               <Trophy className="w-3 h-3 text-amber-400" />
@@ -1667,10 +2014,10 @@ export default function App() {
                             </button>
                           </div>
 
-                          <h3 className="font-extrabold text-sm text-zinc-900 dark:text-white">
+                          <h3 className="font-extrabold text-sm text-zinc-900 dark:text-white truncate">
                             {vis.name}
                           </h3>
-                          <p className="text-[11px] font-mono font-bold text-orange-600 dark:text-orange-400 mt-0.5">
+                          <p className="text-[11px] font-mono font-bold text-orange-600 dark:text-orange-400 mt-0.5 truncate">
                             {vis.uniqueFeature}
                           </p>
                           <p className="text-xs text-zinc-700 dark:text-zinc-300 font-medium mt-1 leading-snug line-clamp-2">
@@ -1683,9 +2030,7 @@ export default function App() {
                 </div>
               </section>
 
-              {/* ====================================================================
-                  STEP 2: EXAMS IN SELECTED CATEGORY (Directly in the Partitioned List Slot!)
-              ==================================================================== */}
+              {/* STEP 2: EXAMS IN SELECTED CATEGORY (With Direct "View My Result" Button!) */}
               <section id="courses" className="space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">
@@ -1738,19 +2083,24 @@ export default function App() {
                     {visibleExamsInSlot.map((sit) => {
                       const isSelected = activeSittingForMode.id === sit.id;
                       const isCopied = copiedExamLinkId === sit.id;
-                      const attemptsCount = standings.filter((s) => s.sittingId === sit.id).length;
+                      const attemptsCount = getUniqueFirstAttempts(
+                        standings.filter((s) => s.sittingId === sit.id),
+                        true
+                      ).length;
+                      const sitGate = getSittingGateDetails(sit);
+                      const savedResultForThisSit = getSavedResultForSitting(sit.id);
 
                       return (
                         <div
                           key={sit.id}
                           onClick={() => handleSelectSittingCard(sit, false)}
-                          className={`py-4 px-3 flex items-center justify-between gap-3 cursor-pointer ${
+                          className={`py-4 px-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer ${
                             isSelected
                               ? 'bg-orange-500/[0.08] dark:bg-orange-500/[0.12]'
                               : 'hover:bg-zinc-100/60 dark:hover:bg-zinc-900/40'
                           }`}
                         >
-                          <div className="flex items-start gap-3.5 min-w-0">
+                          <div className="flex items-start gap-3.5 min-w-0 flex-1">
                             <div
                               className={`w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 ${
                                 isSelected
@@ -1761,14 +2111,18 @@ export default function App() {
                               {isSelected && <CheckCircle2 className="w-3.5 h-3.5" />}
                             </div>
 
-                            <div className="min-w-0 space-y-1">
+                            <div className="min-w-0 flex-1 space-y-1">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-mono text-[10px] uppercase px-2 py-0.5 rounded bg-teal-500/10 text-teal-600 dark:text-teal-400 font-bold">
+                                <span className="font-mono text-[10px] uppercase px-2 py-0.5 rounded bg-teal-500/10 text-teal-600 dark:text-teal-400 font-bold truncate max-w-[180px]">
                                   {sit.targetCourse || 'All Courses'}
                                 </span>
                                 <span className="font-mono text-xs font-extrabold text-orange-600 dark:text-orange-400">
-                                  {sit.requiresCode && sit.priceNaira > 0
-                                    ? `₦${sit.priceNaira.toLocaleString()}`
+                                  {sitGate.isPaidRetake
+                                    ? `₦${sitGate.effectivePrice.toLocaleString()} (2nd Try)`
+                                    : sitGate.needsCode
+                                    ? `₦${sitGate.effectivePrice.toLocaleString()}`
+                                    : Number(sit.retakePriceNaira || 0) > 0
+                                    ? '1ST TRY FREE'
                                     : 'FREE'}
                                 </span>
                                 <span className="text-[11px] font-mono text-zinc-400">
@@ -1780,8 +2134,23 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* Top-Right Leaderboard Badge + Share Link Button on Every Exam Row */}
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <div className="flex items-center gap-1.5 flex-shrink-0 self-end sm:self-center">
+                            {/* IF STUDENT ALREADY SUBMITTED THIS SITTING: Show "View Result" button (no code needed!) */}
+                            {savedResultForThisSit && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setLastExamResult(savedResultForThisSit);
+                                }}
+                                className="px-2.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-[11px] font-bold flex items-center gap-1 shadow-sm"
+                                title="Open your submitted result or check if held results have been released"
+                              >
+                                <FileCheck2 className="w-3.5 h-3.5" />
+                                <span>View Result</span>
+                              </button>
+                            )}
+
                             <button
                               type="button"
                               onClick={(e) =>
@@ -1789,7 +2158,7 @@ export default function App() {
                                   type: 'exam',
                                   id: sit.id,
                                   title: sit.title,
-                                  subtitle: `${sit.targetCourse || 'All Courses'} • ${sit.durationMins} mins`
+                                  subtitle: `${sit.targetCourse || 'All Courses'} • 1st-Attempt Standings`
                                 })
                               }
                               className="px-2.5 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 hover:bg-orange-600 hover:text-white border border-zinc-200 dark:border-zinc-800 text-[11px] font-mono font-bold flex items-center gap-1 transition-colors"
@@ -1802,14 +2171,29 @@ export default function App() {
                             <button
                               type="button"
                               onClick={(e) => handleCopyShareableExamLink(e, sit)}
-                              className="p-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:text-orange-600"
-                              title="Copy Direct Exam Link"
+                              className="px-2.5 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:text-orange-600 text-[11px] font-mono font-bold flex items-center gap-1"
+                              title="Copy Direct Exam URL Only"
                             >
                               {isCopied ? (
-                                <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                  <span className="hidden sm:inline text-emerald-500">Copied</span>
+                                </>
                               ) : (
-                                <Share2 className="w-3.5 h-3.5" />
+                                <>
+                                  <Link2 className="w-3.5 h-3.5" />
+                                  <span className="hidden sm:inline">Copy</span>
+                                </>
                               )}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => handleNativeShareExam(e, sit)}
+                              className="p-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:text-orange-600"
+                              title="Share Exam"
+                            >
+                              <Share2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
@@ -1819,21 +2203,38 @@ export default function App() {
                 )}
               </section>
 
-              {/* LAUNCH ACTION STRIP */}
+              {/* LAUNCH ACTION STRIP (Includes Free "View My Result" Button if already attempted!) */}
               <div className="relative overflow-hidden p-4 sm:px-6 rounded-3xl bg-zinc-950/95 dark:bg-zinc-900/90 backdrop-blur-xl border border-zinc-800 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg">
-                <div className="relative z-10">
-                  <span className="text-[11px] font-mono uppercase tracking-wider text-teal-400 block">
+                <div className="relative z-10 min-w-0 flex-1">
+                  <span className="text-[11px] font-mono uppercase tracking-wider text-teal-400 block truncate">
                     {activeSittingForMode.mode} •{' '}
-                    {activeSittingForMode.requiresCode
-                      ? `₦${activeSittingForMode.priceNaira.toLocaleString()} (Code Required)`
+                    {activeSittingSavedResult
+                      ? 'Completed • Result Saved on Your Profile'
+                      : activeSittingGate.isPaidRetake
+                      ? `2nd Attempt Retake Fee: ₦${activeSittingGate.effectivePrice.toLocaleString()}`
+                      : activeSittingGate.needsCode
+                      ? `₦${activeSittingGate.effectivePrice.toLocaleString()} (Code Required)`
+                      : Number(activeSittingForMode.retakePriceNaira || 0) > 0
+                      ? `Free 1st Attempt (Retakes: ₦${Number(activeSittingForMode.retakePriceNaira).toLocaleString()})`
                       : 'Free Open Sitting'}
                   </span>
-                  <span className="font-bold text-sm sm:text-base">
+                  <span className="font-bold text-sm sm:text-base truncate block">
                     {activeSittingForMode.title}
                   </span>
                 </div>
 
-                <div className="relative z-10 flex items-center gap-2">
+                <div className="relative z-10 flex items-center gap-2 flex-wrap sm:flex-nowrap flex-shrink-0">
+                  {activeSittingSavedResult && (
+                    <button
+                      type="button"
+                      onClick={() => setLastExamResult(activeSittingSavedResult)}
+                      className="px-4 py-3 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shadow-md"
+                    >
+                      <FileCheck2 className="w-4 h-4" />
+                      <span>View My Result</span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={(e) =>
@@ -1841,11 +2242,10 @@ export default function App() {
                         type: 'exam',
                         id: activeSittingForMode.id,
                         title: activeSittingForMode.title,
-                        subtitle: `${activeSittingForMode.mode} Leaderboard`
+                        subtitle: `${activeSittingForMode.mode} • 1st-Attempt Leaderboard`
                       })
                     }
-                    className="px-3.5 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold flex items-center gap-1.5"
-                    title="Inspect Standings Before Attempting"
+                    className="px-3.5 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold flex items-center gap-1.5 whitespace-nowrap"
                   >
                     <Trophy className="w-4 h-4 text-orange-400" />
                     <span className="hidden sm:inline">Rankings</span>
@@ -1853,11 +2253,15 @@ export default function App() {
 
                   <button
                     onClick={handleInitiateAssessment}
-                    className="flex-1 sm:flex-initial px-6 py-3 rounded-xl bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white font-bold text-xs uppercase tracking-wider shadow-md shadow-orange-600/25 flex items-center justify-center gap-2"
+                    className="flex-1 sm:flex-initial px-5 py-3 rounded-xl bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white font-bold text-xs uppercase tracking-wider shadow-md shadow-orange-600/25 flex items-center justify-center gap-1.5 whitespace-nowrap"
                   >
-                    {activeSittingForMode.requiresCode && <KeyRound className="w-3.5 h-3.5" />}
+                    {activeSittingGate.needsCode && <KeyRound className="w-3.5 h-3.5" />}
                     <span>
-                      {activeSittingForMode.requiresCode
+                      {activeSittingSavedResult
+                        ? activeSittingGate.needsCode
+                          ? `Retake (₦${activeSittingGate.effectivePrice.toLocaleString()})`
+                          : 'Retake Exam'
+                        : activeSittingGate.needsCode
                         ? 'Verify Code & Start'
                         : 'Start Exam'}
                     </span>
@@ -1867,16 +2271,21 @@ export default function App() {
               </div>
             </div>
 
-            {/* RIGHT 4 COLUMNS: GENERAL OVERALL STANDINGS (No Clunky Dropdown!) + SQUARE CAROUSEL */}
-            <aside className="lg:col-span-4 lg:border-l lg:border-zinc-200 dark:lg:border-zinc-800 lg:pl-8 space-y-7">
+            {/* RIGHT 4 COLUMNS: GENERAL STANDINGS + SQUARE CAROUSEL */}
+            <aside className="lg:col-span-4 lg:border-l lg:border-zinc-200 dark:lg:border-zinc-800 lg:pl-8 space-y-7 min-w-0">
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Trophy className="w-4 h-4 text-orange-600" />
-                    <h2 className="font-bold text-sm">General Standings</h2>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Trophy className="w-4 h-4 text-orange-600 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <h2 className="font-bold text-sm truncate">General Standings</h2>
+                      <span className="text-[10px] font-mono text-zinc-400 block">
+                        1st Attempts Only
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="flex p-0.5 rounded-xl bg-zinc-200/70 dark:bg-zinc-900 text-[10px] font-bold">
+                  <div className="flex p-0.5 rounded-xl bg-zinc-200/70 dark:bg-zinc-900 text-[10px] font-bold flex-shrink-0">
                     <button
                       onClick={() => setHomeRankingTab('students')}
                       className={`px-2.5 py-1 rounded-lg ${
@@ -1905,19 +2314,23 @@ export default function App() {
                     ? standings.slice(0, 5).map((student, idx) => (
                         <div
                           key={student.id}
-                          className="py-3 flex items-center justify-between text-xs"
+                          className="py-3 flex items-center justify-between gap-2 text-xs min-w-0"
                         >
-                          <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
                             <span
-                              className={`w-5 h-5 rounded-md font-mono font-bold flex items-center justify-center text-[11px] flex-shrink-0 ${
+                              className={`w-6 h-6 rounded-lg font-mono font-bold flex items-center justify-center text-[11px] flex-shrink-0 ${
                                 idx === 0
-                                  ? 'bg-orange-600 text-white'
+                                  ? 'bg-amber-500 text-black shadow-sm'
+                                  : idx === 1
+                                  ? 'bg-zinc-300 dark:bg-zinc-700 text-zinc-900 dark:text-white'
+                                  : idx === 2
+                                  ? 'bg-orange-800 text-amber-100'
                                   : 'bg-zinc-200 dark:bg-zinc-900 text-zinc-500'
                               }`}
                             >
-                              {idx + 1}
+                              {idx === 0 ? <Trophy className="w-3.5 h-3.5" /> : idx + 1}
                             </span>
-                            <div className="min-w-0">
+                            <div className="min-w-0 flex-1">
                               <span className="font-bold block truncate">{student.name}</span>
                               <span className="text-[11px] text-zinc-500 block truncate">
                                 {student.dept}
@@ -1937,9 +2350,9 @@ export default function App() {
                     : deptRankings.slice(0, 5).map((d, idx) => (
                         <div
                           key={d.dept}
-                          className="py-3 flex items-center justify-between text-xs"
+                          className="py-3 flex items-center justify-between gap-2 text-xs min-w-0"
                         >
-                          <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
                             <span
                               className={`w-5 h-5 rounded-md font-mono font-bold flex items-center justify-center text-[11px] flex-shrink-0 ${
                                 idx === 0
@@ -1949,14 +2362,14 @@ export default function App() {
                             >
                               {idx + 1}
                             </span>
-                            <div className="min-w-0">
+                            <div className="min-w-0 flex-1">
                               <span className="font-bold block truncate">{d.dept}</span>
                               <span className="text-[11px] text-zinc-500">
                                 {d.students} ranked
                               </span>
                             </div>
                           </div>
-                          <span className="font-mono font-bold text-teal-600 dark:text-teal-400">
+                          <span className="font-mono font-bold text-teal-600 dark:text-teal-400 flex-shrink-0">
                             {d.avg}
                           </span>
                         </div>
@@ -2008,25 +2421,11 @@ export default function App() {
                         alt={activeAnnouncement.title}
                         className="w-full h-full object-cover"
                       />
-                      {announcements.length > 1 && (
-                        <div className="absolute bottom-3 inset-x-0 flex items-center justify-center gap-1.5">
-                          {announcements.map((item, i) => (
-                            <span
-                              key={item.id}
-                              className={`h-1.5 rounded-full ${
-                                i === annSlide % announcements.length
-                                  ? 'w-5 bg-orange-500'
-                                  : 'w-1.5 bg-white/60'
-                              }`}
-                            />
-                          ))}
-                        </div>
-                      )}
                     </div>
 
                     <div className="p-4 space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
-                        <h3 className="font-bold text-sm leading-snug group-hover:text-orange-600">
+                        <h3 className="font-bold text-sm leading-snug group-hover:text-orange-600 truncate">
                           {activeAnnouncement.title}
                         </h3>
                         <ExternalLink className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
@@ -2040,16 +2439,104 @@ export default function App() {
               )}
             </aside>
           </div>
-        ) : activeTab === 'all-mocks' ? (
+        ) : activeTab === 'my-results' ? (
           /* ====================================================================
-              "ALL EXAMS" DIRECTORY — Every Card Has a Top-Right Leaderboard Badge + Share Link
+             "MY RESULTS" TAB — Check Held or Released Results Anytime Without a Code!
           ==================================================================== */
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-200 dark:border-zinc-800 pb-4">
+              <div>
+                <h1 className="text-2xl font-extrabold">My Submitted Exam Results</h1>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  Re-open any exam sitting you have completed to check released scores, rankings, and corrections—no access code required.
+                </p>
+              </div>
+              <button
+                onClick={() => handleTabChange('tests')}
+                className="text-xs font-bold text-orange-600 hover:underline self-start sm:self-center"
+              >
+                ← Back to Assessments
+              </button>
+            </div>
+
+            {myAllSavedResults.length === 0 ? (
+              <div className="py-16 text-center space-y-2 app-surface rounded-3xl">
+                <FileCheck2 className="w-8 h-8 text-orange-600 mx-auto" />
+                <p className="font-bold text-base">No submitted exam scripts yet</p>
+                <p className="text-xs text-zinc-500">
+                  Once you complete an Official Mock or Speed Drill, your script will be saved here permanently.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {myAllSavedResults.map((res, idx) => {
+                  const liveSitting = sittings.find(
+                    (s) => String(s.id) === String(res.sittingId)
+                  );
+                  const relPolicy =
+                    liveSitting?.releaseMode ||
+                    (liveSitting?.resultsReleased === false ? 'HELD' : 'INSTANT');
+                  const isCurrentlyHeld =
+                    res.mode !== 'PRACTICE' &&
+                    (relPolicy === 'HELD' ||
+                      (relPolicy === 'SCHEDULED' &&
+                        liveSitting?.releaseAt &&
+                        new Date(liveSitting.releaseAt).getTime() > Date.now()));
+
+                  return (
+                    <div
+                      key={res.sittingId || idx}
+                      className="app-surface rounded-3xl p-5 flex flex-col justify-between gap-4 border border-zinc-200 dark:border-zinc-800"
+                    >
+                      <div className="space-y-2 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-[10px] font-bold uppercase px-2.5 py-1 rounded bg-orange-500/10 text-orange-600">
+                            {res.mode}
+                          </span>
+                          <span
+                            className={`font-mono text-[10px] font-bold px-2.5 py-1 rounded ${
+                              isCurrentlyHeld
+                                ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                                : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                            }`}
+                          >
+                            {isCurrentlyHeld ? 'Awaiting Organiser Release' : 'Results Released ✓'}
+                          </span>
+                        </div>
+                        <h3 className="font-extrabold text-base truncate">
+                          {res.sittingTitle || res.title}
+                        </h3>
+                        <p className="text-xs text-zinc-500 font-mono">
+                          {isCurrentlyHeld
+                            ? `Submitted • Finish Time: ${formatSecs(res.timeSpentSeconds)}`
+                            : `Score: ${res.percentage}% (${res.correctCount}/${res.totalQuestions}) • Time: ${formatSecs(res.timeSpentSeconds)}`}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setLastExamResult(res)}
+                        className="w-full py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold flex items-center justify-center gap-2"
+                      >
+                        <FileCheck2 className="w-4 h-4" />
+                        <span>
+                          {isCurrentlyHeld ? 'Check Release Status' : 'Open Full Result & Corrections'}
+                        </span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : activeTab === 'all-mocks' ? (
+          /* "ALL EXAMS" DIRECTORY */
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-200 dark:border-zinc-800 pb-5">
               <div>
                 <h1 className="text-2xl font-extrabold">All Categorized Exams</h1>
                 <p className="text-xs sm:text-sm text-zinc-500 mt-0.5">
-                  Browse exams by category or course. Tap the Trophy badge on the top-right of any exam to see its standings.
+                  Browse exams by category or course. Tap Copy for the direct exam link, or View Result if you already completed it.
                 </p>
               </div>
 
@@ -2144,20 +2631,25 @@ export default function App() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {directoryMocks.map((sit) => {
-                  const attemptsCount = standings.filter((s) => s.sittingId === sit.id).length;
+                  const attemptsCount = getUniqueFirstAttempts(
+                    standings.filter((s) => s.sittingId === sit.id),
+                    true
+                  ).length;
+                  const sitGate = getSittingGateDetails(sit);
+                  const savedRes = getSavedResultForSitting(sit.id);
+
                   return (
                     <div
                       key={sit.id}
-                      className="app-surface rounded-3xl p-6 flex flex-col justify-between gap-5 hover:border-orange-500/50"
+                      className="app-surface rounded-3xl p-6 flex flex-col justify-between gap-5 hover:border-orange-500/50 min-w-0 overflow-hidden"
                     >
-                      <div className="space-y-3">
+                      <div className="space-y-3 min-w-0">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="font-mono text-[10px] font-bold uppercase px-2.5 py-1 rounded-md bg-orange-500/10 text-orange-600 dark:text-orange-400">
+                          <span className="font-mono text-[10px] font-bold uppercase px-2.5 py-1 rounded-md bg-orange-500/10 text-orange-600 dark:text-orange-400 truncate">
                             {MODE_VISUALS[sit.mode]?.name || sit.mode}
                           </span>
 
-                          {/* Top-Right Leaderboard Badge + Share Link */}
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
                             <button
                               type="button"
                               onClick={(e) =>
@@ -2165,11 +2657,10 @@ export default function App() {
                                   type: 'exam',
                                   id: sit.id,
                                   title: sit.title,
-                                  subtitle: `${sit.targetCourse || 'All Courses'} • ${sit.durationMins} mins`
+                                  subtitle: `${sit.targetCourse || 'All Courses'} • 1st-Attempt Standings`
                                 })
                               }
                               className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-900 hover:bg-orange-600 hover:text-white border border-zinc-200 dark:border-zinc-800 text-[11px] font-mono font-bold flex items-center gap-1 transition-colors"
-                              title="View Leaderboard for this Exam"
                             >
                               <Trophy className="w-3.5 h-3.5 text-orange-500" />
                               <span>{attemptsCount}</span>
@@ -2178,47 +2669,81 @@ export default function App() {
                             <button
                               type="button"
                               onClick={(e) => handleCopyShareableExamLink(e, sit)}
-                              className="p-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500"
-                              title="Copy Direct Exam Link"
+                              className="px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 text-[11px] font-mono font-bold flex items-center gap-1"
+                              title="Copy Strict Exam URL"
                             >
                               {copiedExamLinkId === sit.id ? (
                                 <Check className="w-3.5 h-3.5 text-emerald-500" />
                               ) : (
-                                <Share2 className="w-3.5 h-3.5" />
+                                <Link2 className="w-3.5 h-3.5" />
                               )}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => handleNativeShareExam(e, sit)}
+                              className="p-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500"
+                              title="Share Exam"
+                            >
+                              <Share2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
 
-                        <div>
-                          <span className="text-[11px] font-semibold text-teal-600 dark:text-teal-400 block">
+                        <div className="min-w-0">
+                          <span className="text-[11px] font-semibold text-teal-600 dark:text-teal-400 block truncate">
                             {sit.targetCourse || 'All Courses'}
                           </span>
-                          <h3 className="font-extrabold text-base mt-0.5">{sit.title}</h3>
+                          <h3 className="font-extrabold text-base mt-0.5 truncate">{sit.title}</h3>
                         </div>
 
-                        <p className="text-xs text-zinc-500 leading-relaxed">{sit.description}</p>
+                        <p className="text-xs text-zinc-500 leading-relaxed line-clamp-2">
+                          {sit.description}
+                        </p>
                       </div>
 
-                      <div className="space-y-3 pt-3 border-t border-zinc-200/70 dark:border-zinc-800">
+                      <div className="space-y-2.5 pt-3 border-t border-zinc-200/70 dark:border-zinc-800">
                         <div className="flex items-center justify-between text-xs font-mono">
                           <span className="text-zinc-500">
                             {sit.durationMins} mins • Pass: {sit.passMark || 50}%
                           </span>
                           <span className="font-extrabold text-orange-600 dark:text-orange-400">
-                            {sit.requiresCode && sit.priceNaira > 0
-                              ? `₦${sit.priceNaira.toLocaleString()}`
+                            {sitGate.isPaidRetake
+                              ? `₦${sitGate.effectivePrice.toLocaleString()} (Retake)`
+                              : sitGate.needsCode
+                              ? `₦${sitGate.effectivePrice.toLocaleString()}`
+                              : Number(sit.retakePriceNaira || 0) > 0
+                              ? '1ST TRY FREE'
                               : 'FREE'}
                           </span>
                         </div>
 
-                        <button
-                          onClick={() => handleSelectSittingCard(sit, true)}
-                          className="w-full py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5"
-                        >
-                          {sit.requiresCode && <KeyRound className="w-3.5 h-3.5" />}
-                          <span>{sit.requiresCode ? 'Verify Code & Start' : 'Start Exam'}</span>
-                        </button>
+                        <div className="flex gap-2">
+                          {savedRes && (
+                            <button
+                              type="button"
+                              onClick={() => setLastExamResult(savedRes)}
+                              className="flex-1 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs flex items-center justify-center gap-1.5"
+                            >
+                              <FileCheck2 className="w-3.5 h-3.5" />
+                              <span>View Result</span>
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => handleSelectSittingCard(sit, true)}
+                            className="flex-1 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5"
+                          >
+                            {sitGate.needsCode && <KeyRound className="w-3.5 h-3.5" />}
+                            <span>
+                              {savedRes
+                                ? 'Retake'
+                                : sitGate.needsCode
+                                ? 'Verify & Start'
+                                : 'Start Exam'}
+                            </span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -2227,15 +2752,18 @@ export default function App() {
             )}
           </div>
         ) : activeTab === 'leaderboard' ? (
-          /* ====================================================================
-              GENERAL STANDINGS TAB (Clean Overall Challengers + Course Standings)
-          ==================================================================== */
+          /* GENERAL STANDINGS TAB WITH TOP 3 PODIUM + 4TH+ TABLE */
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-200 dark:border-zinc-800 pb-4">
               <div>
-                <h1 className="text-2xl font-extrabold">General Standings</h1>
-                <p className="text-xs text-zinc-500">
-                  Overall platform rankings across all exams. Tap the Trophy badge on any specific exam card to view its dedicated leaderboard.
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-2xl font-extrabold">General Standings</h1>
+                  <span className="text-[10px] font-mono uppercase px-2.5 py-0.5 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 font-bold">
+                    1st Attempts Only
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  Official rankings log each candidate's first attempt per exam sitting.
                 </p>
               </div>
               <div className="flex gap-2">
@@ -2271,10 +2799,10 @@ export default function App() {
             {rankingFilter === 'courses' ? (
               <div className="divide-y divide-zinc-200 dark:divide-zinc-800 border-y border-zinc-200 dark:border-zinc-800">
                 {deptRankings.map((d, idx) => (
-                  <div key={d.dept} className="py-4 flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-4">
+                  <div key={d.dept} className="py-4 flex items-center justify-between gap-3 text-sm">
+                    <div className="flex items-center gap-4 min-w-0">
                       <span
-                        className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${
+                        className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center flex-shrink-0 ${
                           idx === 0
                             ? 'bg-orange-600 text-white'
                             : 'bg-zinc-200 dark:bg-zinc-900 text-zinc-500'
@@ -2282,21 +2810,29 @@ export default function App() {
                       >
                         {idx + 1}
                       </span>
-                      <div>
-                        <span className="font-bold block">{d.dept}</span>
-                        <span className="text-xs text-zinc-500">{d.students} attempts</span>
+                      <div className="min-w-0">
+                        <span className="font-bold block truncate">{d.dept}</span>
+                        <span className="text-xs text-zinc-500">{d.students} ranked 1st attempts</span>
                       </div>
                     </div>
-                    <span className="font-mono font-extrabold text-teal-600 dark:text-teal-400">
+                    <span className="font-mono font-extrabold text-teal-600 dark:text-teal-400 flex-shrink-0">
                       Avg: {d.avg}
                     </span>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between text-xs text-zinc-500">
-                  <span>Showing {standings.length} total attempt(s)</span>
+              <div className="space-y-6">
+                {standingsPage === 0 && standings.length > 0 && (
+                  <TopThreePodium
+                    topThree={standings.slice(0, 3)}
+                    formatSecs={formatSecs}
+                    currentUserName={user?.fullName}
+                  />
+                )}
+
+                <div className="flex items-center justify-between text-xs text-zinc-500 pt-2">
+                  <span>Showing {standings.length} verified first attempt(s)</span>
                   <div className="flex items-center gap-1.5 font-mono">
                     <button
                       disabled={standingsPage === 0}
@@ -2329,35 +2865,39 @@ export default function App() {
                     return (
                       <div
                         key={s.id}
-                        className={`py-4 px-3 flex items-center justify-between text-sm ${
+                        className={`py-4 px-3 flex items-center justify-between gap-3 text-sm ${
                           isMe ? 'bg-orange-500/[0.08] dark:bg-orange-500/[0.14]' : ''
                         }`}
                       >
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-4 min-w-0 flex-1">
                           <span
-                            className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${
+                            className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center flex-shrink-0 ${
                               globalRank === 1
-                                ? 'bg-orange-600 text-white'
+                                ? 'bg-amber-500 text-black'
+                                : globalRank === 2
+                                ? 'bg-zinc-300 dark:bg-zinc-700 text-zinc-900 dark:text-white'
+                                : globalRank === 3
+                                ? 'bg-orange-800 text-amber-100'
                                 : 'bg-zinc-200 dark:bg-zinc-900 text-zinc-500'
                             }`}
                           >
                             {globalRank}
                           </span>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold">{s.name}</span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="font-bold truncate">{s.name}</span>
                               {isMe && (
-                                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-orange-600 text-white font-bold">
+                                <span className="flex-shrink-0 text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-orange-600 text-white font-bold">
                                   YOU
                                 </span>
                               )}
                             </div>
-                            <span className="text-xs text-zinc-500">
+                            <span className="text-xs text-zinc-500 block truncate">
                               {s.dept} • {s.sittingTitle || s.mode}
                             </span>
                           </div>
                         </div>
-                        <div className="text-right font-mono">
+                        <div className="text-right font-mono flex-shrink-0">
                           <span className="font-extrabold text-orange-600 block">
                             {s.score}%
                           </span>
@@ -2535,77 +3075,39 @@ export default function App() {
         )}
       </main>
 
-      {/* ========================================================================
-          PER-EXAM / PER-CATEGORY LEADERBOARD MODAL (Triggered by Top-Right Badge)
-      ======================================================================== */}
+      {/* PER-EXAM / PER-CATEGORY LEADERBOARD MODAL */}
       {leaderboardModalConfig && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="app-surface rounded-3xl max-w-lg w-full p-6 space-y-5 max-h-[85vh] flex flex-col">
+          <div className="app-surface rounded-3xl max-w-xl w-full p-6 space-y-4 max-h-[88vh] flex flex-col overflow-hidden">
             <div className="flex items-start justify-between gap-3 border-b border-zinc-200 dark:border-zinc-800 pb-4">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 min-w-0">
                 <div className="w-10 h-10 rounded-2xl bg-orange-600/15 text-orange-600 flex items-center justify-center flex-shrink-0">
                   <Trophy className="w-5 h-5" />
                 </div>
-                <div>
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-teal-600 dark:text-teal-400 font-bold block">
-                    {leaderboardModalConfig.subtitle}
+                <div className="min-w-0">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-teal-600 dark:text-teal-400 font-bold block truncate">
+                    {leaderboardModalConfig.subtitle} • 1st Attempts Only
                   </span>
-                  <h3 className="font-extrabold text-base sm:text-lg">
+                  <h3 className="font-extrabold text-base sm:text-lg truncate">
                     {leaderboardModalConfig.title}
                   </h3>
                 </div>
               </div>
               <button
                 onClick={() => setLeaderboardModalConfig(null)}
-                className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
+                className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-900 dark:hover:text-white flex-shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Personal Standing Banner Inside This Exam */}
-            {(() => {
-              const myIdx = modalLeaderboardRows.findIndex(
-                (r) => r.name.toLowerCase() === user.fullName.toLowerCase()
-              );
-              const myEntry = myIdx >= 0 ? modalLeaderboardRows[myIdx] : null;
-              const avgScore =
-                modalLeaderboardRows.length > 0
-                  ? Math.round(
-                      modalLeaderboardRows.reduce((a, b) => a + b.score, 0) /
-                        modalLeaderboardRows.length
-                    )
-                  : 0;
-
-              return (
-                <div className="p-3.5 rounded-2xl bg-zinc-100/80 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 grid grid-cols-3 divide-x divide-zinc-200 dark:divide-zinc-800 text-center text-xs">
-                  <div>
-                    <span className="text-[10px] font-mono uppercase text-zinc-400 block">
-                      Your Rank
-                    </span>
-                    <span className="font-mono font-extrabold text-orange-600 text-sm">
-                      {myEntry ? `#${myIdx + 1} of ${modalLeaderboardRows.length}` : 'Unattempted'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-mono uppercase text-zinc-400 block">
-                      Your Best
-                    </span>
-                    <span className="font-mono font-extrabold text-sm">
-                      {myEntry ? `${myEntry.score}%` : '—'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-mono uppercase text-zinc-400 block">
-                      Exam Avg
-                    </span>
-                    <span className="font-mono font-extrabold text-teal-600 dark:text-teal-400 text-sm">
-                      {avgScore}%
-                    </span>
-                  </div>
-                </div>
-              );
-            })()}
+            {modalLeaderboardRows.length > 0 && (
+              <TopThreePodium
+                topThree={modalLeaderboardRows.slice(0, 3)}
+                formatSecs={formatSecs}
+                currentUserName={user?.fullName}
+              />
+            )}
 
             <div className="flex-1 overflow-y-auto divide-y divide-zinc-200 dark:divide-zinc-800 border-y border-zinc-200 dark:border-zinc-800">
               {modalLeaderboardRows.length === 0 ? (
@@ -2616,39 +3118,34 @@ export default function App() {
                   </p>
                 </div>
               ) : (
-                modalLeaderboardRows.map((row, idx) => {
+                modalLeaderboardRows.slice(3).map((row, i) => {
+                  const rankNum = i + 4;
                   const isMe = row.name.toLowerCase() === user.fullName.toLowerCase();
                   return (
                     <div
                       key={row.id}
-                      className={`py-3 px-2 flex items-center justify-between text-xs ${
+                      className={`py-3 px-2 flex items-center justify-between gap-2 text-xs ${
                         isMe ? 'bg-orange-500/10' : ''
                       }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={`w-6 h-6 rounded-lg font-mono font-bold flex items-center justify-center ${
-                            idx === 0
-                              ? 'bg-orange-600 text-white'
-                              : 'bg-zinc-200 dark:bg-zinc-900 text-zinc-500'
-                          }`}
-                        >
-                          {idx + 1}
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <span className="w-6 h-6 rounded-lg font-mono font-bold flex items-center justify-center bg-zinc-200 dark:bg-zinc-900 text-zinc-500 flex-shrink-0">
+                          {rankNum}
                         </span>
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-bold">{row.name}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="font-bold truncate">{row.name}</span>
                             {isMe && (
-                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-orange-600 text-white font-bold">
+                              <span className="flex-shrink-0 text-[9px] font-mono px-1.5 py-0.5 rounded bg-orange-600 text-white font-bold">
                                 YOU
                               </span>
                             )}
                           </div>
-                          <span className="text-[11px] text-zinc-500">{row.dept}</span>
+                          <span className="text-[11px] text-zinc-500 block truncate">{row.dept}</span>
                         </div>
                       </div>
 
-                      <div className="text-right font-mono">
+                      <div className="text-right font-mono flex-shrink-0">
                         <span className="font-extrabold text-orange-600 block">{row.score}%</span>
                         <span className="text-[11px] text-teal-600 dark:text-teal-400">
                           {formatSecs(row.timeSecs)}
@@ -2689,32 +3186,69 @@ export default function App() {
       {/* ACCESS CODE & WHATSAPP PAYMENT GATE MODAL */}
       {showCodeGateModal && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="app-surface rounded-3xl max-w-md w-full p-6 sm:p-7 space-y-5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-2xl bg-orange-600/15 text-orange-600 flex items-center justify-center">
+          <div className="app-surface rounded-3xl max-w-md w-full p-6 sm:p-7 space-y-5 overflow-hidden">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-2xl bg-orange-600/15 text-orange-600 flex items-center justify-center flex-shrink-0">
                   <KeyRound className="w-5 h-5" />
                 </div>
-                <div>
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-teal-600 dark:text-teal-400 font-bold block">
-                    {activeSittingForMode.mode} • {activeSittingForMode.targetCourse || 'All Courses'}
+                <div className="min-w-0">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-teal-600 dark:text-teal-400 font-bold block truncate">
+                    {activeSittingGate.isPaidRetake
+                      ? `Retake Access Gate (Attempt #${activeSittingGate.attemptsMade + 1})`
+                      : `${activeSittingForMode.mode} • Universal Code Gate`}
                   </span>
-                  <h3 className="font-extrabold text-base">{activeSittingForMode.title}</h3>
+                  <h3 className="font-extrabold text-base truncate">{activeSittingForMode.title}</h3>
                 </div>
               </div>
               <button
                 onClick={() => setShowCodeGateModal(false)}
-                className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
+                className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-900 dark:hover:text-white flex-shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
+            {/* If candidate already completed this exam and just wants to check their result, let them open it free! */}
+            {activeSittingSavedResult && (
+              <div className="p-3.5 rounded-2xl bg-teal-500/10 border border-teal-500/30 flex items-center justify-between gap-3 text-xs">
+                <div className="min-w-0">
+                  <span className="font-bold text-teal-700 dark:text-teal-300 block">
+                    Already wrote this sitting?
+                  </span>
+                  <span className="text-[11px] text-zinc-500">
+                    Open your submitted result without a code.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCodeGateModal(false);
+                    setLastExamResult(activeSittingSavedResult);
+                  }}
+                  className="px-3 py-2 rounded-xl bg-teal-600 text-white font-bold whitespace-nowrap flex-shrink-0"
+                >
+                  View Result
+                </button>
+              </div>
+            )}
+
+            {activeSittingGate.isPaidRetake && (
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-700 dark:text-amber-300 space-y-1">
+                <span className="font-bold block">Free 1st Attempt Completed</span>
+                <p className="text-[11px] leading-relaxed">
+                  Your first attempt on this exam was free and has been logged on the leaderboard. Additional retake attempts require a 1-use access code (₦{activeSittingGate.effectivePrice.toLocaleString()}).
+                </p>
+              </div>
+            )}
+
             <div className="p-4 rounded-2xl bg-zinc-100/80 dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
               <div>
-                <span className="text-[11px] text-zinc-500 block">Sitting Entry Fee</span>
+                <span className="text-[11px] text-zinc-500 block">
+                  {activeSittingGate.isPaidRetake ? '2nd Attempt / Retake Fee' : 'Sitting Entry Fee'}
+                </span>
                 <span className="font-mono text-2xl font-extrabold text-orange-600 dark:text-orange-400">
-                  ₦{activeSittingForMode.priceNaira.toLocaleString()}
+                  ₦{activeSittingGate.effectivePrice.toLocaleString()}
                 </span>
               </div>
               <div className="text-right font-mono text-xs">
@@ -2733,7 +3267,7 @@ export default function App() {
             <form onSubmit={handleVerifyAccessCode} className="space-y-3">
               <div>
                 <label className="block text-xs font-bold mb-1.5">
-                  Have an Access Code? Enter it below
+                  Enter Your 1-Time Access Code
                 </label>
                 <input
                   type="text"
@@ -2767,9 +3301,9 @@ export default function App() {
               rel="noreferrer"
               className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20"
             >
-              <MessageCircle className="w-4 h-4" />
-              <span>
-                Pay ₦{activeSittingForMode.priceNaira.toLocaleString()} & Get Code on WhatsApp
+              <MessageCircle className="w-4 h-4 flex-shrink-0" />
+              <span className="truncate">
+                Pay ₦{activeSittingGate.effectivePrice.toLocaleString()} & Get Code on WhatsApp
               </span>
             </a>
           </div>
@@ -2824,9 +3358,9 @@ export default function App() {
       <nav className="md:hidden fixed bottom-3 inset-x-4 z-50 glass-dock rounded-2xl px-2 py-1.5 flex items-center justify-around">
         {[
           { id: 'tests', label: 'Home', icon: Clock },
-          { id: 'all-mocks', label: 'All Exams', icon: LayoutGrid },
+          { id: 'all-mocks', label: 'Exams', icon: LayoutGrid },
+          { id: 'my-results', label: 'Results', icon: FileCheck2 },
           { id: 'leaderboard', label: 'Standings', icon: Trophy },
-          { id: 'saved', label: 'Saved', icon: Bookmark },
           { id: 'profile', label: 'Profile', icon: User }
         ].map((tab) => {
           const Icon = tab.icon;
@@ -2835,7 +3369,7 @@ export default function App() {
             <button
               key={tab.id}
               onClick={() => handleTabChange(tab.id)}
-              className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl ${
+              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl ${
                 isActive ? 'text-orange-600 dark:text-orange-400 font-bold' : 'text-zinc-400'
               }`}
             >

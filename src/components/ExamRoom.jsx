@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Clock,
   Bookmark,
@@ -12,13 +12,14 @@ import {
   X,
   Zap,
   Layers,
-  ShieldCheck
+  ShieldCheck,
+  LayoutGrid
 } from 'lucide-react';
 
 export default function ExamRoom({
   sessionConfig,
   questions,
-  bookmarks,
+  bookmarks = [],
   onToggleBookmark,
   onReportQuestion,
   onCompleteExam,
@@ -63,6 +64,12 @@ export default function ExamRoom({
     return sessionConfig.durationSeconds;
   });
 
+  // Anti-cheat & Mobile Bottom Sheet state
+  const [cheatWarnings, setCheatWarnings] = useState(0);
+  const [showMobileMap, setShowMobileMap] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const maxAllowedLeaves = Number(sessionConfig.maxTabSwitches || 3);
+
   // Unique to Speed Drill: toggle instant answer check
   const [instantFeedbackEnabled, setInstantFeedbackEnabled] = useState(true);
 
@@ -85,6 +92,42 @@ export default function ExamRoom({
   const currentQ = questions[currentIndex] || questions[0];
   const totalQuestions = questions.length;
   const answeredCount = Object.keys(answers).length;
+
+  const handleFinalSubmit = useCallback(() => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
+    const timeSpent = Math.max(1, sessionConfig.durationSeconds - timeLeft);
+    let correctCount = 0;
+    const missedQuestions = [];
+
+    questions.forEach((q) => {
+      if (answers[q.id] === q.correctIndex) {
+        correctCount += 1;
+      } else {
+        missedQuestions.push(q);
+      }
+    });
+
+    const percentage = Math.round((correctCount / totalQuestions) * 100);
+    localStorage.removeItem(STORAGE_KEY);
+
+    onCompleteExam({
+      sessionId: sessionConfig.sessionId,
+      sittingId: sessionConfig.sittingId,
+      sittingTitle: sessionConfig.sittingTitle,
+      mode: sessionConfig.mode,
+      title: sessionConfig.title,
+      totalQuestions,
+      correctCount,
+      percentage,
+      timeSpentSeconds: timeSpent,
+      answers,
+      questions,
+      missedQuestions,
+      completedAt: new Date().toISOString()
+    });
+  }, [isSubmitting, sessionConfig, timeLeft, questions, answers, totalQuestions, onCompleteExam]);
 
   useEffect(() => {
     if (prepCountdown <= 0) return;
@@ -119,11 +162,51 @@ export default function ExamRoom({
       setTimeLeft((prev) => prev - 1);
     }, 1000);
     return () => clearInterval(timer);
-  }, [timeLeft, prepCountdown]);
+  }, [timeLeft, prepCountdown, handleFinalSubmit]);
+
+  // Anti-cheat screen-leave & refresh lock (Active on Official/Timed mocks)
+  useEffect(() => {
+    if (prepCountdown > 0 || isSubmitting || isSpeedDrill) return;
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        setCheatWarnings((prev) => {
+          const next = prev + 1;
+          if (next >= maxAllowedLeaves) {
+            alert(`Exam auto-submitted: You left the exam screen ${maxAllowedLeaves} times.`);
+            handleFinalSubmit();
+          } else {
+            alert(`Warning (${next}/${maxAllowedLeaves}): Do not leave the exam screen or your exam will auto-submit!`);
+          }
+          return next;
+        });
+      }
+    };
+
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [prepCountdown, isSubmitting, isSpeedDrill, maxAllowedLeaves, handleFinalSubmit]);
+
+  const handleSelectOption = (optionIndex) => {
+    if (optionIndex >= currentQ.options.length) return;
+    setAnswers((prev) => ({
+      ...prev,
+      [currentQ.id]: optionIndex
+    }));
+  };
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (prepCountdown > 0 || showReportModal || showSubmitModal) return;
+      if (prepCountdown > 0 || showReportModal || showSubmitModal || showMobileMap) return;
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
 
       const key = e.key.toUpperCase();
@@ -131,6 +214,7 @@ export default function ExamRoom({
       if (key === 'B') handleSelectOption(1);
       if (key === 'C') handleSelectOption(2);
       if (key === 'D') handleSelectOption(3);
+      if (key === 'E') handleSelectOption(4);
       if (key === 'N' || e.key === 'ArrowRight') {
         setCurrentIndex((prev) => Math.min(totalQuestions - 1, prev + 1));
       }
@@ -140,19 +224,12 @@ export default function ExamRoom({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [prepCountdown, currentIndex, totalQuestions, showReportModal, showSubmitModal]);
+  }, [prepCountdown, currentIndex, totalQuestions, showReportModal, showSubmitModal, showMobileMap, currentQ]);
 
   const formatTime = (secs) => {
     const mins = Math.floor(secs / 60);
     const remSecs = secs % 60;
     return `${String(mins).padStart(2, '0')}:${String(remSecs).padStart(2, '0')}`;
-  };
-
-  const handleSelectOption = (optionIndex) => {
-    setAnswers((prev) => ({
-      ...prev,
-      [currentQ.id]: optionIndex
-    }));
   };
 
   const toggleReviewFlag = (qId) => {
@@ -234,39 +311,6 @@ export default function ExamRoom({
     }, 900);
   };
 
-  const handleFinalSubmit = () => {
-    const timeSpent = Math.max(1, sessionConfig.durationSeconds - timeLeft);
-    let correctCount = 0;
-    const missedQuestions = [];
-
-    questions.forEach((q) => {
-      if (answers[q.id] === q.correctIndex) {
-        correctCount += 1;
-      } else {
-        missedQuestions.push(q);
-      }
-    });
-
-    const percentage = Math.round((correctCount / totalQuestions) * 100);
-    localStorage.removeItem(STORAGE_KEY);
-
-    onCompleteExam({
-      sessionId: sessionConfig.sessionId,
-      sittingId: sessionConfig.sittingId,
-      sittingTitle: sessionConfig.sittingTitle,
-      mode: sessionConfig.mode,
-      title: sessionConfig.title,
-      totalQuestions,
-      correctCount,
-      percentage,
-      timeSpentSeconds: timeSpent,
-      answers,
-      questions,
-      missedQuestions,
-      completedAt: new Date().toISOString()
-    });
-  };
-
   if (prepCountdown > 0) {
     return (
       <div className="fixed inset-0 z-50 bg-[#09090b] text-white flex flex-col items-center justify-center p-6 select-none">
@@ -288,7 +332,7 @@ export default function ExamRoom({
           {prepCountdown}
         </div>
         <p className="text-xs text-zinc-500 mt-8 font-mono">
-          Keyboard shortcuts active: [A] [B] [C] [D] to answer • [N] / [P] to navigate
+          Keyboard shortcuts active: [A]–[E] to answer • [N] / [P] to navigate
         </p>
       </div>
     );
@@ -302,9 +346,9 @@ export default function ExamRoom({
     isSpeedDrill && instantFeedbackEnabled && selectedAnswerForCurrent !== undefined;
 
   return (
-    <div className="min-h-screen flex flex-col justify-between pb-16 animate-view relative">
+    <div className="h-screen overflow-hidden flex flex-col justify-between animate-view relative">
       {/* Top Exam Bar */}
-      <header className="sticky top-0 z-40 bg-zinc-950 text-white border-b border-zinc-800">
+      <header className="flex-shrink-0 z-40 bg-zinc-950 text-white border-b border-zinc-800">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -338,7 +382,9 @@ export default function ExamRoom({
                 ) : (
                   <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-mono text-teal-400">
                     <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Strict Lock</span>
+                    <span>
+                      Strict Lock {cheatWarnings > 0 ? `(${cheatWarnings}/${maxAllowedLeaves})` : ''}
+                    </span>
                   </span>
                 )}
               </div>
@@ -563,126 +609,130 @@ export default function ExamRoom({
         </div>
       )}
 
-      {/* Main Split Question Canvas */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-6 sm:pt-10 grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
-        <div className="lg:col-span-8 space-y-6">
-          <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-4">
-            <div className="flex items-center gap-3">
-              <span className="px-3 py-1 rounded-lg bg-orange-600 text-white font-mono text-xs font-bold">
-                Q{currentIndex + 1} / {totalQuestions}
-              </span>
-              <span className="font-mono text-xs font-semibold text-teal-600 dark:text-teal-400">
-                {currentQ.courseCode}
-              </span>
-            </div>
+      {/* Main Split Question Canvas (Fixed viewport, internal scroll only if needed) */}
+      <main className="flex-1 overflow-hidden max-w-6xl w-full mx-auto px-4 sm:px-6 pt-4 sm:pt-8 pb-20 lg:pb-6 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* Left 8 Columns: Question & Fixed Navigation */}
+        <div className="lg:col-span-8 h-full flex flex-col justify-between overflow-hidden">
+          <div className="flex-1 overflow-y-auto pr-1 space-y-5">
+            <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-3">
+              <div className="flex items-center gap-3">
+                <span className="px-3 py-1 rounded-lg bg-orange-600 text-white font-mono text-xs font-bold">
+                  Q{currentIndex + 1} / {totalQuestions}
+                </span>
+                <span className="font-mono text-xs font-semibold text-teal-600 dark:text-teal-400">
+                  {currentQ.courseCode}
+                </span>
+              </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => toggleReviewFlag(currentQ.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
-                  isFlaggedForReview
-                    ? 'bg-amber-500 text-black'
-                    : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400'
-                }`}
-              >
-                {isFlaggedForReview ? 'Flagged for Review' : 'Review Later'}
-              </button>
-
-              <button
-                onClick={() => onToggleBookmark(currentQ)}
-                className={`p-2 rounded-xl transition-colors ${
-                  isBookmarked
-                    ? 'bg-orange-600 text-white'
-                    : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500'
-                }`}
-                title="Save Question"
-              >
-                <Bookmark className="w-4 h-4" />
-              </button>
-
-              <button
-                onClick={() => setShowReportModal(true)}
-                className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-900 text-zinc-500 hover:text-red-500"
-                title="Report Question Error"
-              >
-                <Flag className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {currentQ.passage && (
-            <div className="p-4 rounded-2xl bg-teal-500/[0.06] border-l-4 border-teal-500 text-xs sm:text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
-              <span className="block font-mono text-[10px] uppercase tracking-wider font-bold text-teal-600 dark:text-teal-400 mb-1">
-                Case Passage
-              </span>
-              {currentQ.passage}
-            </div>
-          )}
-
-          <h2 className="text-lg sm:text-xl font-bold leading-relaxed py-2">
-            {currentQ.question}
-          </h2>
-
-          {/* Options List */}
-          <div className="divide-y divide-zinc-200/80 dark:divide-zinc-800/80 border-y border-zinc-200/80 dark:border-zinc-800/80">
-            {currentQ.options.map((optionText, idx) => {
-              const isSelected = selectedAnswerForCurrent === idx;
-              const isCorrectOption = idx === currentQ.correctIndex;
-              const optionLabel = ['A', 'B', 'C', 'D'][idx];
-
-              let rowClass = 'hover:bg-zinc-100/70 dark:hover:bg-zinc-900/60';
-              if (showSpeedDrillCorrection) {
-                if (isCorrectOption) {
-                  rowClass = 'bg-teal-600 text-white font-semibold';
-                } else if (isSelected && !isCorrectOption) {
-                  rowClass = 'bg-red-600 text-white font-semibold';
-                }
-              } else if (isSelected) {
-                rowClass = 'bg-orange-600 text-white font-semibold';
-              }
-
-              return (
+              <div className="flex items-center gap-2">
                 <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleSelectOption(idx)}
-                  className={`w-full text-left py-4 px-4 transition-colors flex items-center justify-between gap-4 ${rowClass}`}
+                  onClick={() => toggleReviewFlag(currentQ.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+                    isFlaggedForReview
+                      ? 'bg-amber-500 text-black'
+                      : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400'
+                  }`}
                 >
-                  <div className="flex items-center gap-4">
-                    <span
-                      className={`w-7 h-7 rounded-lg font-mono text-xs font-bold flex items-center justify-center flex-shrink-0 ${
-                        isSelected || (showSpeedDrillCorrection && isCorrectOption)
-                          ? 'bg-black text-white'
-                          : 'bg-zinc-200/80 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
-                      }`}
-                    >
-                      {optionLabel}
-                    </span>
-                    <span className="text-sm sm:text-base leading-snug">{optionText}</span>
-                  </div>
-
-                  {showSpeedDrillCorrection && isCorrectOption && (
-                    <CheckCircle2 className="w-5 h-5 text-white flex-shrink-0" />
-                  )}
-                  {showSpeedDrillCorrection && isSelected && !isCorrectOption && (
-                    <XCircle className="w-5 h-5 text-white flex-shrink-0" />
-                  )}
+                  {isFlaggedForReview ? 'Flagged for Review' : 'Review Later'}
                 </button>
-              );
-            })}
+
+                <button
+                  onClick={() => onToggleBookmark(currentQ)}
+                  className={`p-2 rounded-xl transition-colors ${
+                    isBookmarked
+                      ? 'bg-orange-600 text-white'
+                      : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500'
+                  }`}
+                  title="Save Question"
+                >
+                  <Bookmark className="w-4 h-4" />
+                </button>
+
+                <button
+                  onClick={() => setShowReportModal(true)}
+                  className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-900 text-zinc-500 hover:text-red-500"
+                  title="Report Question Error"
+                >
+                  <Flag className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {currentQ.passage && (
+              <div className="p-4 rounded-2xl bg-teal-500/[0.06] border-l-4 border-teal-500 text-xs sm:text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                <span className="block font-mono text-[10px] uppercase tracking-wider font-bold text-teal-600 dark:text-teal-400 mb-1">
+                  Case Passage
+                </span>
+                {currentQ.passage}
+              </div>
+            )}
+
+            <h2 className="text-lg sm:text-xl font-bold leading-relaxed py-1">
+              {currentQ.question}
+            </h2>
+
+            {/* Options List (Restored exact original styling + Option E) */}
+            <div className="divide-y divide-zinc-200/80 dark:divide-zinc-800/80 border-y border-zinc-200/80 dark:border-zinc-800/80">
+              {currentQ.options.map((optionText, idx) => {
+                const isSelected = selectedAnswerForCurrent === idx;
+                const isCorrectOption = idx === currentQ.correctIndex;
+                const optionLabel = ['A', 'B', 'C', 'D', 'E'][idx];
+
+                let rowClass = 'hover:bg-zinc-100/70 dark:hover:bg-zinc-900/60';
+                if (showSpeedDrillCorrection) {
+                  if (isCorrectOption) {
+                    rowClass = 'bg-teal-600 text-white font-semibold';
+                  } else if (isSelected && !isCorrectOption) {
+                    rowClass = 'bg-red-600 text-white font-semibold';
+                  }
+                } else if (isSelected) {
+                  rowClass = 'bg-orange-600 text-white font-semibold';
+                }
+
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleSelectOption(idx)}
+                    className={`w-full text-left py-3.5 px-4 transition-colors flex items-center justify-between gap-4 ${rowClass}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <span
+                        className={`w-7 h-7 rounded-lg font-mono text-xs font-bold flex items-center justify-center flex-shrink-0 ${
+                          isSelected || (showSpeedDrillCorrection && isCorrectOption)
+                            ? 'bg-black text-white'
+                            : 'bg-zinc-200/80 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                        }`}
+                      >
+                        {optionLabel}
+                      </span>
+                      <span className="text-sm sm:text-base leading-snug">{optionText}</span>
+                    </div>
+
+                    {showSpeedDrillCorrection && isCorrectOption && (
+                      <CheckCircle2 className="w-5 h-5 text-white flex-shrink-0" />
+                    )}
+                    {showSpeedDrillCorrection && isSelected && !isCorrectOption && (
+                      <XCircle className="w-5 h-5 text-white flex-shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* UNIQUE TO SPEED DRILL: Instant Rationale Reveal */}
+            {showSpeedDrillCorrection && currentQ.explanation && (
+              <div className="p-4 rounded-2xl bg-teal-500/10 border border-teal-500/30 text-xs sm:text-sm leading-relaxed animate-view">
+                <strong className="text-teal-700 dark:text-teal-300 block mb-0.5 font-mono uppercase text-[11px]">
+                  Speed Drill Instant Rationale:
+                </strong>
+                <span className="text-zinc-700 dark:text-zinc-200">{currentQ.explanation}</span>
+              </div>
+            )}
           </div>
 
-          {/* UNIQUE TO SPEED DRILL: Instant Rationale Reveal */}
-          {showSpeedDrillCorrection && currentQ.explanation && (
-            <div className="p-4 rounded-2xl bg-teal-500/10 border border-teal-500/30 text-xs sm:text-sm leading-relaxed animate-view">
-              <strong className="text-teal-700 dark:text-teal-300 block mb-0.5 font-mono uppercase text-[11px]">
-                Speed Drill Instant Rationale:
-              </strong>
-              <span className="text-zinc-700 dark:text-zinc-200">{currentQ.explanation}</span>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between pt-4">
+          {/* Desktop Navigation Bar (Pinned at bottom of question column) */}
+          <div className="hidden lg:flex items-center justify-between pt-4 border-t border-zinc-200/60 dark:border-zinc-800/60 flex-shrink-0">
             <button
               type="button"
               disabled={currentIndex === 0}
@@ -715,9 +765,9 @@ export default function ExamRoom({
           </div>
         </div>
 
-        {/* Right 4 Columns: CBT Question Map */}
-        <aside className="lg:col-span-4 lg:border-l lg:border-zinc-200 dark:lg:border-zinc-800 lg:pl-8 space-y-5">
-          <div className="flex items-center justify-between">
+        {/* Right 4 Columns: Desktop CBT Question Map */}
+        <aside className="hidden lg:flex lg:col-span-4 h-full flex-col justify-between lg:border-l lg:border-zinc-200 dark:lg:border-zinc-800 lg:pl-8 overflow-hidden">
+          <div className="flex items-center justify-between flex-shrink-0 mb-4">
             <h3 className="font-bold text-sm uppercase tracking-wider text-zinc-500">
               CBT Question Map
             </h3>
@@ -726,7 +776,7 @@ export default function ExamRoom({
             </span>
           </div>
 
-          <div className="grid grid-cols-5 gap-2">
+          <div className="flex-1 overflow-y-auto pr-1 grid grid-cols-5 gap-2 content-start">
             {questions.map((q, idx) => {
               const isCurrent = idx === currentIndex;
               const isAnswered = answers[q.id] !== undefined;
@@ -753,7 +803,7 @@ export default function ExamRoom({
             })}
           </div>
 
-          <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 space-y-2 text-xs text-zinc-500">
+          <div className="pt-4 mt-4 border-t border-zinc-200 dark:border-zinc-800 space-y-2 text-xs text-zinc-500 flex-shrink-0">
             <div className="flex items-center justify-between">
               <span>Answered</span>
               <span className="font-mono font-bold text-orange-600">{answeredCount}</span>
@@ -769,6 +819,111 @@ export default function ExamRoom({
           </div>
         </aside>
       </main>
+
+      {/* MOBILE PINNED BOTTOM BAR (With Pop-Up Question Map Trigger) */}
+      <footer className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 px-4 py-3 flex items-center justify-between gap-2">
+        <button
+          type="button"
+          disabled={currentIndex === 0}
+          onClick={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
+          className="px-4 py-2.5 rounded-xl bg-zinc-900 text-zinc-200 text-xs font-semibold disabled:opacity-40 flex items-center gap-1"
+        >
+          <ChevronLeft className="w-4 h-4" />
+          <span>Prev</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowMobileMap(true)}
+          className="px-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white font-mono text-xs font-bold flex items-center gap-2"
+        >
+          <LayoutGrid className="w-4 h-4 text-orange-500" />
+          <span>
+            Map ({answeredCount}/{totalQuestions})
+          </span>
+        </button>
+
+        {currentIndex < totalQuestions - 1 ? (
+          <button
+            type="button"
+            onClick={() => setCurrentIndex((prev) => Math.min(totalQuestions - 1, prev + 1))}
+            className="px-4 py-2.5 rounded-xl bg-orange-600 text-white text-xs font-bold flex items-center gap-1"
+          >
+            <span>Next</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowSubmitModal(true)}
+            className="px-4 py-2.5 rounded-xl bg-teal-600 text-white text-xs font-bold flex items-center gap-1"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            <span>Finish</span>
+          </button>
+        )}
+      </footer>
+
+      {/* MOBILE SLIDE-UP QUESTION MAP DRAWER */}
+      {showMobileMap && (
+        <div
+          className="lg:hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex flex-col justify-end"
+          onClick={() => setShowMobileMap(false)}
+        >
+          <div
+            className="app-surface rounded-t-3xl p-5 pb-8 max-h-[75vh] flex flex-col space-y-4 animate-view border-t border-zinc-200 dark:border-zinc-800"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-12 h-1.5 bg-zinc-300 dark:bg-zinc-700 rounded-full mx-auto" />
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-sm uppercase tracking-wider">CBT Question Map</h3>
+                <p className="text-xs text-zinc-500 font-mono">
+                  {answeredCount} Answered • {totalQuestions - answeredCount} Remaining •{' '}
+                  {flaggedReview.length} Flagged
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMobileMap(false)}
+                className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto grid grid-cols-5 sm:grid-cols-8 gap-2.5 pt-2">
+              {questions.map((q, idx) => {
+                const isCurrent = idx === currentIndex;
+                const isAnswered = answers[q.id] !== undefined;
+                const isReview = flaggedReview.includes(q.id);
+
+                return (
+                  <button
+                    key={q.id}
+                    type="button"
+                    onClick={() => {
+                      setCurrentIndex(idx);
+                      setShowMobileMap(false);
+                    }}
+                    className={`h-11 rounded-xl font-mono text-xs font-bold transition-all ${
+                      isCurrent
+                        ? 'ring-2 ring-orange-600 bg-orange-500/15 text-orange-600 dark:text-orange-400'
+                        : isReview
+                        ? 'bg-amber-500 text-black'
+                        : isAnswered
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-zinc-200/70 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400'
+                    }`}
+                  >
+                    {idx + 1}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showSubmitModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
