@@ -221,7 +221,6 @@ export default function AdminConsole({
         const cleanEmail = adminEmail.trim().toLowerCase();
         const cleanPass = adminPassword.trim();
 
-        // 1. Direct Organiser Match (Email matches organiser email + Password matches Admin PIN / Brilly2405 / 2026)
         if (
           cleanEmail === savedOrgEmail &&
           (cleanPass === savedPin ||
@@ -234,7 +233,6 @@ export default function AdminConsole({
           return;
         }
 
-        // 2. Try Supabase Auth Sign-In
         if (isSupabaseConfigured && supabase) {
           const { data, error } = await supabase.auth.signInWithPassword({
             email: cleanEmail,
@@ -274,7 +272,6 @@ export default function AdminConsole({
     }
   };
 
-  // STRICT COPY: Copies ONLY the direct exam link (`/?exam=<sitting_id>`)
   const handleCopyExamShareLink = (sit) => {
     const link = `${window.location.origin}/?exam=${sit.id}`;
     navigator.clipboard.writeText(link);
@@ -282,7 +279,6 @@ export default function AdminConsole({
     setTimeout(() => setCopiedShareId(null), 2200);
   };
 
-  // NATIVE SHARE: Opens system share drawer or falls back to strict copy
   const handleNativeShareExamLink = async (sit) => {
     const link = `${window.location.origin}/?exam=${sit.id}`;
     if (navigator.share) {
@@ -454,7 +450,7 @@ export default function AdminConsole({
         retake_price_naira: copy.retakePriceNaira || 0,
         requires_code: copy.requiresCode,
         duration_mins: copy.durationMins,
-        question_count: copy.questionCount,
+        question_count: copy.questionCount || 20,
         pass_mark: copy.passMark || 50,
         max_tab_switches: copy.maxTabSwitches || 3,
         allowed_courses: copy.allowedCourses || [],
@@ -499,6 +495,7 @@ export default function AdminConsole({
       if (patch.priceNaira !== undefined) dbPatch.price_naira = patch.priceNaira;
       if (patch.retakePriceNaira !== undefined) dbPatch.retake_price_naira = patch.retakePriceNaira;
       if (patch.durationMins !== undefined) dbPatch.duration_mins = patch.durationMins;
+      if (patch.questionCount !== undefined) dbPatch.question_count = patch.questionCount;
       if (patch.maxTabSwitches !== undefined) dbPatch.max_tab_switches = patch.maxTabSwitches;
       if (patch.requiresCode !== undefined) dbPatch.requires_code = patch.requiresCode;
       if (patch.resultsReleased !== undefined) dbPatch.results_released = patch.resultsReleased;
@@ -541,7 +538,6 @@ export default function AdminConsole({
     logAdminAction('Deleted subject/course', courseObj.code);
   };
 
-  // UPDATED 10-COLUMN CSV TEMPLATE (Supports A-E and True/False in the same sheet!)
   const handleDownloadCsvTemplate = () => {
     const sampleRows = [
       'course_code,question,option_a,option_b,option_c,option_d,option_e,correct_option,explanation,passage',
@@ -559,7 +555,6 @@ export default function AdminConsole({
     URL.revokeObjectURL(url);
   };
 
-  // SMART CSV PARSER: Supports both 9-column (A-D) and 10-column (A-E) + True/False rows seamlessly
   const handleCsvFileSelected = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -712,7 +707,6 @@ export default function AdminConsole({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // UNIVERSAL 1-USE CODE GENERATOR: Generates codes that unlock ANY sitting once
   const handleGenerateCodes = async (e) => {
     e.preventDefault();
     const count = Math.min(50, Math.max(1, Number(codeGenForm.quantity) || 1));
@@ -1369,13 +1363,13 @@ export default function AdminConsole({
                       key={sit.id}
                       className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                     >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="font-mono text-[10px] font-bold px-2.5 py-1 rounded bg-orange-500/10 text-orange-600 flex-shrink-0">
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-[10px] font-bold px-2.5 py-1 rounded bg-orange-500/10 text-orange-600">
                           {(sit.allowedModes || [sit.mode]).join(' + ')}
                         </span>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-sm text-zinc-900 truncate">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm text-zinc-900">
                               {sit.title}
                             </span>
                             <span
@@ -1394,9 +1388,9 @@ export default function AdminConsole({
                                 : 'Results: Held'}
                             </span>
                           </div>
-                          <span className="text-zinc-500 block truncate">
+                          <span className="text-zinc-500">
                             Course: <strong>{sit.targetCourse || 'All Courses'}</strong> •{' '}
-                            {sit.durationMins} mins • Max Leaves: {sit.maxTabSwitches || 3} •{' '}
+                            {sit.questionCount} Qs • {sit.durationMins} mins • Max Leaves: {sit.maxTabSwitches || 3} •{' '}
                             {sit.requiresCode && sit.priceNaira > 0
                               ? `₦${sit.priceNaira.toLocaleString()}`
                               : Number(sit.retakePriceNaira || 0) > 0
@@ -1406,7 +1400,7 @@ export default function AdminConsole({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
                           onClick={() => handleCopyExamShareLink(sit)}
@@ -1460,7 +1454,7 @@ export default function AdminConsole({
               <div>
                 <h1 className="text-2xl font-bold">Exams & Sittings Manager</h1>
                 <p className="text-xs text-zinc-500 mt-1">
-                  Configure 1st-attempt & retake pricing, screen-leave anti-cheat limits, result release policies, and direct share links.
+                  Configure question counts, 1st-attempt & retake pricing, screen-leave limits, result policies, and direct share links.
                 </p>
               </div>
               <button
@@ -1536,7 +1530,7 @@ export default function AdminConsole({
                     className="bg-white rounded-2xl p-6 border border-zinc-200/80 shadow-sm space-y-5"
                   >
                     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-zinc-100 pb-4">
-                      <div className="space-y-1 min-w-0">
+                      <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-mono text-[10px] font-bold px-2.5 py-0.5 rounded bg-orange-500/10 text-orange-600">
                             {(sit.allowedModes || [sit.mode]).join(' + ')}
@@ -1544,7 +1538,7 @@ export default function AdminConsole({
                           <span className="font-mono text-[10px] font-bold px-2.5 py-0.5 rounded bg-teal-500/10 text-teal-700">
                             Course: {sit.targetCourse || 'All Courses'}
                           </span>
-                          <h3 className="font-bold text-base text-zinc-900 truncate">{sit.title}</h3>
+                          <h3 className="font-bold text-base text-zinc-900">{sit.title}</h3>
                         </div>
                         <p className="text-xs text-zinc-500">{sit.description}</p>
                       </div>
@@ -1643,7 +1637,7 @@ export default function AdminConsole({
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 text-xs">
                       <div>
                         <label className="block text-zinc-400 font-medium mb-1">
                           1st Try Price (₦)
@@ -1696,7 +1690,22 @@ export default function AdminConsole({
 
                       <div>
                         <label className="block text-zinc-400 font-medium mb-1">
-                          Max Screen Leaves
+                          Total Qs
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={sit.questionCount || 20}
+                          onChange={(e) =>
+                            handleUpdateSitting(sit.id, { questionCount: Number(e.target.value) })
+                          }
+                          className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 font-mono font-bold"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-zinc-400 font-medium mb-1">
+                          Max Leaves
                         </label>
                         <input
                           type="number"
@@ -1708,7 +1717,7 @@ export default function AdminConsole({
                               maxTabSwitches: Math.max(1, Number(e.target.value))
                             })
                           }
-                          className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 font-mono font-bold"
+                          className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 font-mono font-bold text-teal-700"
                         />
                       </div>
 
@@ -1767,7 +1776,7 @@ export default function AdminConsole({
         )}
 
         {/* ====================================================================
-            3. SUBJECTS & 10-COLUMN .CSV BANK (Organized & Grouped!)
+            3. SUBJECTS & 10-COLUMN .CSV BANK
         ==================================================================== */}
         {activeNav === 'bank' && (
           <div className="space-y-8">
@@ -2015,7 +2024,7 @@ export default function AdminConsole({
               )}
             </div>
 
-            {/* 3. SINGLE QUESTION EDITOR (With MCQ A-E or True/False Toggle) + QUESTION BANK */}
+            {/* 3. SINGLE QUESTION EDITOR */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
               <div className="lg:col-span-5 bg-white rounded-2xl p-6 border border-zinc-200/80 shadow-sm space-y-4">
                 <div className="flex items-center justify-between">
@@ -2268,7 +2277,7 @@ export default function AdminConsole({
         )}
 
         {/* ====================================================================
-            4. UNIVERSAL SINGLE-USE ACCESS CODES TAB (Auto-Hides USED Codes)
+            4. UNIVERSAL SINGLE-USE ACCESS CODES TAB
         ==================================================================== */}
         {activeNav === 'codes' && (
           <div className="space-y-6">
@@ -2324,7 +2333,6 @@ export default function AdminConsole({
               </button>
             </form>
 
-            {/* Search Bar for Live Codes */}
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs font-semibold text-zinc-500">
                 Active Unused Pool ({unusedCodes.length})
@@ -2698,7 +2706,6 @@ export default function AdminConsole({
               </div>
             )}
 
-            {/* 4 KPI Summary Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-white rounded-2xl p-5 border border-zinc-200/80 shadow-sm space-y-1">
                 <span className="text-xs text-zinc-500 font-medium block">Submitted (1st Try)</span>
@@ -2725,7 +2732,6 @@ export default function AdminConsole({
               </div>
             </div>
 
-            {/* Candidates Result Table Header + Filters */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
               <div>
                 <h2 className="font-bold text-base">Candidates Standings Overview</h2>
@@ -2767,7 +2773,6 @@ export default function AdminConsole({
               </div>
             </div>
 
-            {/* Proper Candidates Table */}
             <div className="bg-white rounded-2xl border border-zinc-200/80 shadow-sm overflow-hidden">
               <div className="grid grid-cols-12 px-6 py-3.5 bg-zinc-50/80 border-b border-zinc-200/80 text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-bold">
                 <div className="col-span-2"># Position</div>
@@ -2954,7 +2959,7 @@ export default function AdminConsole({
                     </label>
                     <input
                       type="text"
-                      placeholder="https://wa.me/..."
+                      placeholder="[https://wa.me/](https://wa.me/)..."
                       value={newAnn.ctaUrl}
                       onChange={(e) => setNewAnn({ ...newAnn, ctaUrl: e.target.value })}
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200"
@@ -3146,13 +3151,13 @@ export default function AdminConsole({
       </main>
 
       {/* ======================================================================
-          CREATE / EDIT EXAM MODAL (With Retake Price, Screen Leaves & Release Mode)
+          CREATE / EDIT EXAM MODAL (With Retake Price, Total Questions, Screen Leaves & Release Mode)
       ====================================================================== */}
       {showSittingModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <form
             onSubmit={handleSaveSitting}
-            className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-7 space-y-4 text-xs max-h-[92vh] overflow-y-auto shadow-2xl"
+            className="bg-white rounded-3xl max-w-3xl w-full p-6 sm:p-7 space-y-4 text-xs max-h-[92vh] overflow-y-auto shadow-2xl"
           >
             <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
               <h3 className="text-lg font-bold">
@@ -3258,8 +3263,8 @@ export default function AdminConsole({
               />
             </div>
 
-            {/* Pricing, Retake Fee, Duration, Pass Mark & Anti-Cheat Screen Leave Limit */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {/* Pricing, Retake Fee, Duration, Question Count, Pass Mark & Anti-Cheat Screen Leave Limit */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
                 <label className="block font-semibold text-zinc-600 mb-1">
                   1st Attempt Price (₦)
@@ -3287,7 +3292,7 @@ export default function AdminConsole({
                   onChange={(e) =>
                     setSittingForm({ ...sittingForm, retakePriceNaira: e.target.value })
                   }
-                  className="w-full px-3 py-2 rounded-xl bg-orange-50/50 border border-orange-200 font-mono font-bold"
+                  className="w-full px-3 py-2 rounded-xl bg-orange-50/50 border border-orange-200 font-mono font-bold text-orange-600"
                 />
               </div>
 
@@ -3318,6 +3323,20 @@ export default function AdminConsole({
                 />
               </div>
 
+              {/* THIS IS THE MISSING FIELD TO FIX THE 25 QUESTION LIMIT! */}
+              <div>
+                <label className="block font-semibold text-zinc-600 mb-1">Total Questions</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={sittingForm.questionCount}
+                  onChange={(e) =>
+                    setSittingForm({ ...sittingForm, questionCount: e.target.value })
+                  }
+                  className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 font-mono font-bold"
+                />
+              </div>
+
               <div>
                 <label className="block font-semibold text-zinc-600 mb-1">Pass Mark (%)</label>
                 <input
@@ -3330,7 +3349,7 @@ export default function AdminConsole({
                 />
               </div>
 
-              <div>
+              <div className="col-span-2">
                 <label className="block font-semibold text-teal-700 mb-1">
                   Max Screen Leaves (Anti-Cheat)
                 </label>
