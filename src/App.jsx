@@ -1073,7 +1073,10 @@ export default function App() {
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
-    if (!formData.email || !formData.password) {
+    const cleanEmail = formData.email.trim().toLowerCase();
+    const cleanPassword = formData.password;
+
+    if (!cleanEmail || !cleanPassword) {
       setAuthError('Enter both your email address and password.');
       return;
     }
@@ -1083,13 +1086,14 @@ export default function App() {
     }
 
     setAuthSubmitting(true);
+    const localRegistry = JSON.parse(localStorage.getItem('aia_registered_users') || '{}');
 
     try {
       if (isSupabaseConfigured && supabase) {
         if (authMode === 'signup') {
           const { data, error } = await supabase.auth.signUp({
-            email: formData.email,
-            password: formData.password,
+            email: cleanEmail,
+            password: cleanPassword,
             options: {
               data: {
                 full_name: formData.fullName.trim(),
@@ -1098,40 +1102,70 @@ export default function App() {
               }
             }
           });
-          if (error) throw error;
 
-          if (data?.user) {
-            await supabase.from('profiles').upsert({
-              id: data.user.id,
-              full_name: formData.fullName.trim(),
-              email: formData.email,
-              institution: formData.institution,
-              department: formData.department
-            });
-
-            const profile = {
-              id: data.user.id,
-              email: formData.email,
-              fullName: formData.fullName.trim(),
-              institution: formData.institution,
-              department: formData.department
-            };
-            localStorage.setItem('aia_active_user', JSON.stringify(profile));
-            setUser(profile);
+          if (error && error.message?.toLowerCase().includes('already registered')) {
+            const { data: signInData, error: signInErr } =
+              await supabase.auth.signInWithPassword({
+                email: cleanEmail,
+                password: cleanPassword
+              });
+            if (signInErr) throw signInErr;
+            if (signInData?.user) {
+              const profile = {
+                id: signInData.user.id,
+                email: cleanEmail,
+                fullName:
+                  signInData.user.user_metadata?.full_name ||
+                  formData.fullName.trim() ||
+                  cleanEmail.split('@')[0],
+                institution:
+                  signInData.user.user_metadata?.institution || formData.institution,
+                department:
+                  signInData.user.user_metadata?.department || formData.department
+              };
+              localStorage.setItem('aia_active_user', JSON.stringify(profile));
+              setUser(profile);
+              return;
+            }
+          } else if (error) {
+            throw error;
           }
-        } else {
-          const { data, error } = await supabase.auth.signInWithPassword({
-            email: formData.email,
-            password: formData.password
-          });
-          if (error) throw error;
 
-          if (data?.user) {
+          const userId = data?.user?.id || 'usr_' + Date.now();
+          const profile = {
+            id: userId,
+            email: cleanEmail,
+            fullName: formData.fullName.trim(),
+            institution: formData.institution,
+            department: formData.department
+          };
+
+          await supabase.from('profiles').upsert({
+            id: userId,
+            full_name: profile.fullName,
+            email: profile.email,
+            institution: profile.institution,
+            department: profile.department
+          });
+
+          localRegistry[cleanEmail] = { ...profile, password: cleanPassword };
+          localStorage.setItem('aia_registered_users', JSON.stringify(localRegistry));
+          localStorage.setItem('aia_active_user', JSON.stringify(profile));
+          setUser(profile);
+          return;
+        } else {
+          // SIGN IN MODE
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password: cleanPassword
+          });
+
+          if (!error && data?.user) {
             const { data: prof } = await supabase
               .from('profiles')
               .select('*')
               .eq('id', data.user.id)
-              .single();
+              .maybeSingle();
 
             const profile = {
               id: data.user.id,
@@ -1139,33 +1173,66 @@ export default function App() {
               fullName:
                 prof?.full_name ||
                 data.user.user_metadata?.full_name ||
-                data.user.email.split('@')[0],
+                localRegistry[cleanEmail]?.fullName ||
+                cleanEmail.split('@')[0],
               institution:
                 prof?.institution ||
                 data.user.user_metadata?.institution ||
+                localRegistry[cleanEmail]?.institution ||
                 'Lagos State University (LASU / LASUCOM)',
               department:
                 prof?.department ||
                 data.user.user_metadata?.department ||
+                localRegistry[cleanEmail]?.department ||
                 'Physiotherapy'
             };
             localStorage.setItem('aia_active_user', JSON.stringify(profile));
             setUser(profile);
+            return;
           }
+
+          // Local backup fallback if Supabase rejects unconfirmed email
+          if (localRegistry[cleanEmail] && localRegistry[cleanEmail].password === cleanPassword) {
+            const { password, ...savedProfile } = localRegistry[cleanEmail];
+            localStorage.setItem('aia_active_user', JSON.stringify(savedProfile));
+            setUser(savedProfile);
+            return;
+          }
+
+          throw error || new Error('Invalid email or password.');
         }
       } else {
+        // Offline / Unconfigured Supabase Mode
+        if (
+          authMode === 'signin' &&
+          localRegistry[cleanEmail] &&
+          localRegistry[cleanEmail].password !== cleanPassword
+        ) {
+          throw new Error('Incorrect password for this student account.');
+        }
         const profile = {
-          id: 'usr_' + Date.now(),
-          email: formData.email,
-          fullName: authMode === 'signup' ? formData.fullName.trim() : formData.email.split('@')[0],
-          institution: formData.institution,
-          department: formData.department
+          id: localRegistry[cleanEmail]?.id || 'usr_' + Date.now(),
+          email: cleanEmail,
+          fullName:
+            authMode === 'signup'
+              ? formData.fullName.trim()
+              : localRegistry[cleanEmail]?.fullName || cleanEmail.split('@')[0],
+          institution:
+            localRegistry[cleanEmail]?.institution || formData.institution,
+          department:
+            localRegistry[cleanEmail]?.department || formData.department
         };
+        localRegistry[cleanEmail] = { ...profile, password: cleanPassword };
+        localStorage.setItem('aia_registered_users', JSON.stringify(localRegistry));
         localStorage.setItem('aia_active_user', JSON.stringify(profile));
         setUser(profile);
       }
     } catch (err) {
-      setAuthError(err.message || 'Authentication failed. Check your credentials.');
+      setAuthError(
+        err.message === 'Email not confirmed'
+          ? 'Disable "Confirm email" in Supabase Auth settings, or click Create Account again.'
+          : err.message || 'Authentication failed. Check your email and password.'
+      );
     } finally {
       setAuthSubmitting(false);
     }

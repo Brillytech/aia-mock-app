@@ -26,7 +26,6 @@ import {
   Lock,
   Unlock,
   Clock,
-  ShieldAlert,
   ExternalLink,
   ChevronLeft,
   ChevronRight,
@@ -115,7 +114,6 @@ export default function AdminConsole({
   const [modalSubjectSearch, setModalSubjectSearch] = useState('');
 
   // Access Codes Filter
-  const [codesSittingFilter, setCodesSittingFilter] = useState('ALL');
   const [codesSearch, setCodesSearch] = useState('');
 
   // Candidates Directory Filter & Pagination
@@ -134,7 +132,6 @@ export default function AdminConsole({
   const [settingsSavedBanner, setSettingsSavedBanner] = useState(false);
 
   const [codeGenForm, setCodeGenForm] = useState({
-    sittingId: sittings[0]?.id || 'sit-mock-1',
     quantity: 5,
     assignedTo: '',
     maxUses: 1
@@ -206,35 +203,68 @@ export default function AdminConsole({
     return `${m}m ${String(s).padStart(2, '0')}s`;
   };
 
-  // Real Supabase Organiser Auth + PIN Fallback
+  // UNIFIED ADMIN AUTH: Works with Organiser Email + Password/PIN OR Supabase Auth OR Quick PIN
   const handleAdminUnlock = async (e) => {
     e.preventDefault();
     setPinError('');
     setAuthLoading(true);
 
-    try {
-      if (loginMethod === 'email' && isSupabaseConfigured && supabase) {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: adminEmail.trim(),
-          password: adminPassword
-        });
-        if (error) throw error;
+    const savedPin = String(platformConfig?.adminPin || '2026').trim();
+    const savedOrgEmail = String(
+      platformConfig?.organiserEmail || 'ayodejiakin2020@gmail.com'
+    )
+      .trim()
+      .toLowerCase();
 
-        if (data?.user) {
+    try {
+      if (loginMethod === 'email') {
+        const cleanEmail = adminEmail.trim().toLowerCase();
+        const cleanPass = adminPassword.trim();
+
+        // 1. Direct Organiser Match (Email matches organiser email + Password matches Admin PIN / Brilly2405 / 2026)
+        if (
+          cleanEmail === savedOrgEmail &&
+          (cleanPass === savedPin ||
+            cleanPass === 'Brilly2405' ||
+            cleanPass === '2026')
+        ) {
           sessionStorage.setItem('aia_admin_unlocked', 'true');
           setIsUnlocked(true);
-          logAdminAction(`Organiser ${data.user.email} signed in via Supabase Auth`, 'Auth');
+          logAdminAction(`Organiser ${cleanEmail} signed in`, 'Auth');
+          return;
         }
+
+        // 2. Try Supabase Auth Sign-In
+        if (isSupabaseConfigured && supabase) {
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password: adminPassword
+          });
+
+          if (!error && data?.user) {
+            sessionStorage.setItem('aia_admin_unlocked', 'true');
+            setIsUnlocked(true);
+            logAdminAction(`Organiser ${data.user.email} signed in via Supabase`, 'Auth');
+            return;
+          }
+        }
+
+        setPinError(
+          'Invalid email or password. Use your Organiser Email with your Console PIN (e.g. Brilly2405 or 2026), or switch to Quick PIN.'
+        );
       } else {
+        const cleanPin = pinInput.trim();
         if (
-          pinInput === (platformConfig?.adminPin || '2026') ||
-          pinInput.toLowerCase() === 'admin'
+          cleanPin === savedPin ||
+          cleanPin === 'Brilly2405' ||
+          cleanPin === '2026' ||
+          cleanPin.toLowerCase() === 'admin'
         ) {
           sessionStorage.setItem('aia_admin_unlocked', 'true');
           setIsUnlocked(true);
           logAdminAction('Organiser signed into /admin console via PIN', 'Session');
         } else {
-          setPinError('Invalid organiser credentials. Use your Supabase account or PIN.');
+          setPinError('Invalid Organiser PIN.');
         }
       }
     } catch (err) {
@@ -682,9 +712,9 @@ export default function AdminConsole({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  // UNIVERSAL 1-USE CODE GENERATOR: Generates codes that unlock ANY sitting once
   const handleGenerateCodes = async (e) => {
     e.preventDefault();
-    const targetSitting = sittings.find((s) => s.id === codeGenForm.sittingId) || sittings[0];
     const count = Math.min(50, Math.max(1, Number(codeGenForm.quantity) || 1));
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -698,13 +728,13 @@ export default function AdminConsole({
       return {
         id: 'code_' + Date.now() + '_' + idx,
         code: `AIA-${part1}-${part2}`,
-        sittingId: targetSitting.id,
-        sittingTitle: targetSitting.title,
-        mode: targetSitting.mode,
-        priceNaira: targetSitting.priceNaira || targetSitting.retakePriceNaira || 0,
-        assignedTo: count === 1 ? codeGenForm.assignedTo.trim() : codeGenForm.assignedTo.trim(),
+        sittingId: 'ALL',
+        sittingTitle: 'Universal 1-Use Pass (Any Exam)',
+        mode: 'ALL',
+        priceNaira: 1000,
+        assignedTo: codeGenForm.assignedTo.trim(),
         status: 'LIVE',
-        maxUses: 1, // Strictly 1-use per candidate
+        maxUses: 1,
         usedCount: 0,
         createdAt: new Date().toLocaleDateString()
       };
@@ -716,19 +746,19 @@ export default function AdminConsole({
       await supabase.from('access_codes').insert(
         generated.map((g) => ({
           code: g.code,
-          sitting_id: g.sittingId,
+          sitting_id: null,
           sitting_title: g.sittingTitle,
-          mode: g.mode,
+          mode: 'ALL',
           price_naira: g.priceNaira,
           assigned_to: g.assignedTo,
-          status: g.status,
+          status: 'LIVE',
           max_uses: 1,
           used_count: 0
         }))
       );
     }
 
-    logAdminAction(`Generated ${count} single-use access code(s)`, targetSitting.title);
+    logAdminAction(`Generated ${count} universal 1-use access code(s)`, 'Universal Pool');
     setCodeGenForm({ ...codeGenForm, assignedTo: '' });
   };
 
@@ -834,6 +864,7 @@ export default function AdminConsole({
     };
 
     setPlatformConfig(updatedConfig);
+    setAdminEmail(updatedConfig.organiserEmail);
     localStorage.setItem('aia_platform_config', JSON.stringify(updatedConfig));
 
     try {
@@ -989,7 +1020,7 @@ export default function AdminConsole({
                 loginMethod === 'email' ? 'bg-white shadow-sm text-zinc-900' : 'text-zinc-500'
               }`}
             >
-              Supabase Account
+              Organiser Login
             </button>
             <button
               type="button"
@@ -1031,14 +1062,14 @@ export default function AdminConsole({
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-zinc-600 mb-1">
-                    Password
+                    Password or Console PIN
                   </label>
                   <div className="relative">
                     <Lock className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                     <input
                       type="password"
                       required
-                      placeholder="••••••••"
+                      placeholder="Enter password or PIN..."
                       value={adminPassword}
                       onChange={(e) => setAdminPassword(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-zinc-50 border border-zinc-200 text-xs focus:outline-none focus:border-orange-600"
@@ -1049,7 +1080,7 @@ export default function AdminConsole({
             ) : (
               <div>
                 <label className="block text-xs font-semibold text-zinc-600 mb-1.5">
-                  Organiser PIN (Current: {platformConfig?.adminPin || '2026'})
+                  Organiser Quick PIN
                 </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -1256,11 +1287,11 @@ export default function AdminConsole({
                   Overview
                 </h1>
                 <p className="text-xs sm:text-sm text-zinc-500 mt-1">
-                  Manage Saturday Official Mocks, control result releases, copy direct student links, and issue single-use codes.
+                  Manage Saturday Official Mocks, control result releases, copy direct student links, and issue universal single-use codes.
                 </p>
               </div>
 
-              <div className="flex items-center gap-3 self-start">
+              <div className="flex items-center gap-3 self-start flex-wrap">
                 <button
                   onClick={() => setActiveNav('results')}
                   className="px-4 py-2.5 rounded-full bg-white border border-zinc-200 hover:bg-zinc-50 text-xs font-semibold flex items-center gap-2 shadow-sm"
@@ -1338,13 +1369,13 @@ export default function AdminConsole({
                       key={sit.id}
                       className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                     >
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono text-[10px] font-bold px-2.5 py-1 rounded bg-orange-500/10 text-orange-600">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="font-mono text-[10px] font-bold px-2.5 py-1 rounded bg-orange-500/10 text-orange-600 flex-shrink-0">
                           {(sit.allowedModes || [sit.mode]).join(' + ')}
                         </span>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-sm text-zinc-900">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-zinc-900 truncate">
                               {sit.title}
                             </span>
                             <span
@@ -1363,7 +1394,7 @@ export default function AdminConsole({
                                 : 'Results: Held'}
                             </span>
                           </div>
-                          <span className="text-zinc-500">
+                          <span className="text-zinc-500 block truncate">
                             Course: <strong>{sit.targetCourse || 'All Courses'}</strong> •{' '}
                             {sit.durationMins} mins • Max Leaves: {sit.maxTabSwitches || 3} •{' '}
                             {sit.requiresCode && sit.priceNaira > 0
@@ -1375,7 +1406,7 @@ export default function AdminConsole({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-shrink-0">
                         <button
                           type="button"
                           onClick={() => handleCopyExamShareLink(sit)}
@@ -1505,7 +1536,7 @@ export default function AdminConsole({
                     className="bg-white rounded-2xl p-6 border border-zinc-200/80 shadow-sm space-y-5"
                   >
                     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-zinc-100 pb-4">
-                      <div className="space-y-1">
+                      <div className="space-y-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-mono text-[10px] font-bold px-2.5 py-0.5 rounded bg-orange-500/10 text-orange-600">
                             {(sit.allowedModes || [sit.mode]).join(' + ')}
@@ -1513,7 +1544,7 @@ export default function AdminConsole({
                           <span className="font-mono text-[10px] font-bold px-2.5 py-0.5 rounded bg-teal-500/10 text-teal-700">
                             Course: {sit.targetCourse || 'All Courses'}
                           </span>
-                          <h3 className="font-bold text-base text-zinc-900">{sit.title}</h3>
+                          <h3 className="font-bold text-base text-zinc-900 truncate">{sit.title}</h3>
                         </div>
                         <p className="text-xs text-zinc-500">{sit.description}</p>
                       </div>
@@ -2237,21 +2268,22 @@ export default function AdminConsole({
         )}
 
         {/* ====================================================================
-            4. ACCESS CODES TAB (Single-Use per Sitting, Auto-Hides USED Codes)
+            4. UNIVERSAL SINGLE-USE ACCESS CODES TAB (Auto-Hides USED Codes)
         ==================================================================== */}
         {activeNav === 'codes' && (
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h1 className="text-2xl font-bold">Single-Use Sitting Access Codes</h1>
+                <h1 className="text-2xl font-bold">Universal Single-Use Access Codes</h1>
                 <p className="text-xs text-zinc-500 mt-1">
-                  Codes are strictly bound to their target exam sitting and automatically disappear from this list the moment a candidate uses them.
+                  One universal code generator for all exams. Each code unlocks any paid sitting once and disappears immediately after use.
                 </p>
               </div>
               <span className="font-mono text-xs px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold self-start">
                 {unusedCodes.length} Unused Live Code(s)
               </span>
             </div>
+
             <form
               onSubmit={handleGenerateCodes}
               className="bg-white rounded-2xl p-6 border border-zinc-200/80 shadow-sm grid grid-cols-1 sm:grid-cols-4 gap-4 items-end"
@@ -2292,22 +2324,12 @@ export default function AdminConsole({
               </button>
             </form>
 
-            {/* Filter Bar for Live Codes */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <select
-                value={codesSittingFilter}
-                onChange={(e) => setCodesSittingFilter(e.target.value)}
-                className="px-3.5 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-semibold"
-              >
-                <option value="ALL">All Exam Sittings ({unusedCodes.length})</option>
-                {activeSittings.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.title}
-                  </option>
-                ))}
-              </select>
-
-              <div className="relative w-full sm:w-64">
+            {/* Search Bar for Live Codes */}
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-semibold text-zinc-500">
+                Active Unused Pool ({unusedCodes.length})
+              </span>
+              <div className="relative w-full sm:w-72">
                 <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
@@ -2322,13 +2344,10 @@ export default function AdminConsole({
             <div className="bg-white rounded-2xl border border-zinc-200/80 shadow-sm divide-y divide-zinc-100 overflow-hidden">
               {unusedCodes
                 .filter((c) => {
-                  const matchesSit =
-                    codesSittingFilter === 'ALL' || String(c.sittingId) === String(codesSittingFilter);
-                  const matchesQ =
+                  return (
                     c.code.toLowerCase().includes(codesSearch.toLowerCase()) ||
-                    (c.assignedTo || '').toLowerCase().includes(codesSearch.toLowerCase()) ||
-                    (c.sittingTitle || '').toLowerCase().includes(codesSearch.toLowerCase());
-                  return matchesSit && matchesQ;
+                    (c.assignedTo || '').toLowerCase().includes(codesSearch.toLowerCase())
+                  );
                 })
                 .map((c) => (
                   <div
@@ -2341,11 +2360,10 @@ export default function AdminConsole({
                       </span>
                       <div>
                         <span className="font-semibold text-zinc-900 block">
-                          {c.sittingTitle || 'Exam Sitting'} ({c.mode}) • ₦
-                          {(c.priceNaira || 0).toLocaleString()}
+                          Universal 1-Use Pass (Valid on Any Sitting)
                         </span>
                         <span className="text-zinc-400">
-                          {c.assignedTo ? `Note: ${c.assignedTo}` : 'Ready to issue'} • Single-Use (1 Sitting)
+                          {c.assignedTo ? `Note: ${c.assignedTo}` : 'Ready to issue'} • Disappears once used
                         </span>
                       </div>
                     </div>
@@ -2387,7 +2405,7 @@ export default function AdminConsole({
         )}
 
         {/* ====================================================================
-            5. CANDIDATES DIRECTORY TAB (Standardized Table + Search & Filter)
+            5. CANDIDATES DIRECTORY TAB
         ==================================================================== */}
         {activeNav === 'candidates' && (
           <div className="space-y-6">
@@ -2530,11 +2548,10 @@ export default function AdminConsole({
         )}
 
         {/* ====================================================================
-            6. RESULTS & RELEASE OVERVIEW TAB (Matches UTME Mock 1.0 Screenshot!)
+            6. RESULTS & RELEASE OVERVIEW TAB
         ==================================================================== */}
         {activeNav === 'results' && (
           <div className="space-y-6">
-            {/* Top Bar: Description + Sitting Selector + Export CSV */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <p className="text-xs sm:text-sm text-zinc-500 max-w-xl leading-relaxed">
                 Scores are calculated on the server. When a sitting is set to <strong>Held</strong> or <strong>Scheduled</strong>, candidates see a locked submission receipt until you release results.
@@ -2573,7 +2590,6 @@ export default function AdminConsole({
               </div>
             </div>
 
-            {/* Release Controller Card for the Active Sitting */}
             {selectedResultSitting && (
               <div className="bg-white rounded-2xl p-5 sm:p-6 border border-zinc-200/80 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="flex items-start sm:items-center gap-4">
@@ -3007,7 +3023,7 @@ export default function AdminConsole({
         )}
 
         {/* ====================================================================
-            8. SETTINGS TAB (Fully Working WhatsApp Number, Email & PIN Editor)
+            8. SETTINGS TAB (Fixed Backspace Bug with ?? '')
         ==================================================================== */}
         {activeNav === 'settings' && (
           <div className="max-w-2xl">
@@ -3015,7 +3031,7 @@ export default function AdminConsole({
               <div>
                 <h2 className="text-xl font-extrabold">Platform & WhatsApp Payment Settings</h2>
                 <p className="text-xs text-zinc-500 mt-1">
-                  Changes saved here immediately update the student WhatsApp payment redirect and Organiser PIN.
+                  Changes saved here immediately update the student WhatsApp payment redirect and Organiser PIN across Localhost and Vercel.
                 </p>
               </div>
 
@@ -3034,7 +3050,7 @@ export default function AdminConsole({
                   <input
                     type="text"
                     required
-                    value={platformConfig?.whatsappNumber || ''}
+                    value={platformConfig?.whatsappNumber ?? ''}
                     onChange={(e) =>
                       setPlatformConfig((p) => ({ ...p, whatsappNumber: e.target.value }))
                     }
@@ -3050,25 +3066,27 @@ export default function AdminConsole({
                   <input
                     type="email"
                     required
-                    value={platformConfig?.organiserEmail || adminEmail}
+                    value={platformConfig?.organiserEmail ?? ''}
                     onChange={(e) =>
                       setPlatformConfig((p) => ({ ...p, organiserEmail: e.target.value }))
                     }
+                    placeholder="ayodejiakin2020@gmail.com"
                     className="w-full px-4 py-3 rounded-xl bg-zinc-50 border border-zinc-200 focus:border-orange-500 outline-none text-sm"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">
-                    Organiser Console Quick PIN
+                    Organiser Console Quick PIN / Password
                   </label>
                   <input
                     type="text"
                     required
-                    value={platformConfig?.adminPin || '2026'}
+                    value={platformConfig?.adminPin ?? ''}
                     onChange={(e) =>
                       setPlatformConfig((p) => ({ ...p, adminPin: e.target.value }))
                     }
+                    placeholder="Enter new PIN (e.g. Brilly2405)"
                     className="w-full px-4 py-3 rounded-xl bg-zinc-50 border border-zinc-200 focus:border-orange-500 outline-none font-mono text-sm"
                   />
                 </div>
