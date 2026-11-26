@@ -66,3 +66,27 @@
   animation: shimmer 1.4s infinite linear;
   @apply rounded-xl;
 }
+
+/* ---------- Exam room protection ---------- */
+
+/* No text selection, no long-press menu on phones (but the report box stays typeable) */
+.exam-protected,
+.exam-protected * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.exam-protected input,
+.exam-protected textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Printing during an exam gives a blank page.
+   Only active while an exam is running, so Admin and Results pages can still print. */
+@media print {
+  body.exam-active {
+    display: none !important;
+  }
+}

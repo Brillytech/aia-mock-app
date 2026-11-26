@@ -18,7 +18,8 @@ import {
   Search,
   Link2,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  Layers
 } from 'lucide-react';
 
 export default function ResultView({
@@ -35,6 +36,7 @@ export default function ResultView({
   const [copiedExamLink, setCopiedExamLink] = useState(false);
   const [activeResultTab, setActiveResultTab] = useState('standings'); // 'standings' | 'review'
   const [reviewFilter, setReviewFilter] = useState('all');
+  const [reviewSubject, setReviewSubject] = useState('ALL');
   const [reviewPage, setReviewPage] = useState(0);
   const [nowTick, setNowTick] = useState(Date.now());
   const [showConfetti, setShowConfetti] = useState(false);
@@ -44,6 +46,10 @@ export default function ResultView({
 
   const QUESTIONS_PER_PAGE = 3;
   const STANDINGS_PER_PAGE = 8;
+
+  const resultQuestions = result.questions || [];
+  const resultAnswers = result.answers || {};
+  const missedQuestions = result.missedQuestions || [];
 
   const matchedSitting = sittings.find((s) => String(s.id) === String(result.sittingId));
   const passMark = matchedSitting?.passMark || result.passMark || 50;
@@ -61,6 +67,37 @@ export default function ResultView({
 
   const didPass = result.percentage >= passMark;
 
+  // ---------- COMBO: per-subject numbers ----------
+  const subjectCodes = useMemo(
+    () => Array.from(new Set(resultQuestions.map((q) => q.courseCode))),
+    [resultQuestions]
+  );
+  const isComboResult = result.mode === 'BUNDLED' && subjectCodes.length > 1;
+
+  const subjectStats = useMemo(
+    () =>
+      subjectCodes.map((code) => {
+        const qs = resultQuestions.filter((q) => q.courseCode === code);
+        const correct = qs.filter((q) => resultAnswers[q.id] === q.correctIndex).length;
+        const attempted = qs.filter((q) => resultAnswers[q.id] !== undefined).length;
+        return {
+          code,
+          total: qs.length,
+          correct,
+          attempted,
+          pct: qs.length ? Math.round((correct / qs.length) * 100) : 0
+        };
+      }),
+    [subjectCodes, resultQuestions, resultAnswers]
+  );
+
+  const bestSubject = isComboResult
+    ? subjectStats.reduce((a, b) => (b.pct > a.pct ? b : a), subjectStats[0])
+    : null;
+  const weakestSubject = isComboResult
+    ? subjectStats.reduce((a, b) => (b.pct < a.pct ? b : a), subjectStats[0])
+    : null;
+
   // Auto-unlock check when scheduled time arrives
   useEffect(() => {
     if (!isHeldByAdmin) return;
@@ -68,7 +105,7 @@ export default function ResultView({
     return () => clearInterval(timer);
   }, [isHeldByAdmin]);
 
-  // Trigger lightweight 3.2-second celebration confetti when candidate passes & results are released
+  // 3.2-second celebration confetti when the candidate passes and results are released
   useEffect(() => {
     if (!isHeldByAdmin && didPass) {
       setShowConfetti(true);
@@ -77,7 +114,6 @@ export default function ResultView({
     }
   }, [isHeldByAdmin, didPass]);
 
-  // Pre-compute 36 lightweight confetti particles in AIA brand colors (Orange, Teal, Amber Gold, Emerald)
   const confettiPieces = useMemo(() => {
     const colors = ['#ea580c', '#14b8a6', '#f59e0b', '#10b981', '#fb923c', '#2dd4bf'];
     return Array.from({ length: 36 }).map((_, idx) => ({
@@ -101,21 +137,16 @@ export default function ResultView({
     result.sittingId || 'sit-mock-1'
   )}`;
 
-  // STRICT COPY: Copies ONLY the raw exam link
   const handleCopyExamLink = () => {
     navigator.clipboard.writeText(shareableExamUrl);
     setCopiedExamLink(true);
     setTimeout(() => setCopiedExamLink(false), 2200);
   };
 
-  // NATIVE SHARE: Opens system share drawer
   const handleNativeShareLink = async () => {
     if (navigator.share) {
       try {
-        await navigator.share({
-          title: result.title,
-          url: shareableExamUrl
-        });
+        await navigator.share({ title: result.title, url: shareableExamUrl });
         return;
       } catch (e) {}
     }
@@ -123,7 +154,7 @@ export default function ResultView({
   };
 
   // ============================================================================
-  // EMBARGO SCREEN: Shown when Organiser holds or schedules results release
+  // EMBARGO SCREEN: shown when the Organiser holds or schedules results release
   // ============================================================================
   if (isHeldByAdmin) {
     const formattedSchedule = releaseTimestamp
@@ -183,11 +214,11 @@ export default function ResultView({
             <span className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-widest px-3 py-1 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 font-bold">
               <ShieldCheck className="w-3.5 h-3.5" /> Official Script Recorded
             </span>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Submission Locked & Received
-            </h1>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Submission Locked & Received</h1>
             <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
-              Your script for <strong className="text-zinc-900 dark:text-white">{result.title}</strong> has been securely saved. To protect exam integrity while other candidates are still writing, scores and question corrections are currently held by the Organiser.
+              Your script for <strong className="text-zinc-900 dark:text-white">{result.title}</strong> has been
+              securely saved. To protect exam integrity while other candidates are still writing, scores and
+              question corrections are currently held by the Organiser.
             </p>
           </div>
 
@@ -206,7 +237,7 @@ export default function ResultView({
             <div className="px-4 pt-3 sm:pt-0">
               <span className="text-[10px] font-mono uppercase text-zinc-400 block">Attempted</span>
               <span className="font-mono font-extrabold text-sm text-orange-600 block mt-0.5">
-                {Object.keys(result.answers || {}).length} / {result.totalQuestions} Qs
+                {Object.keys(resultAnswers).length} / {result.totalQuestions} Qs
               </span>
             </div>
             <div className="px-4 pt-3 sm:pt-0">
@@ -216,6 +247,25 @@ export default function ResultView({
               </span>
             </div>
           </div>
+
+          {/* Combo: how many questions were attempted per subject (no scores while held) */}
+          {isComboResult && (
+            <div className="space-y-2">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 flex items-center justify-center gap-1.5">
+                <Layers className="w-3 h-3" /> Attempted per subject
+              </span>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {subjectStats.map((s) => (
+                  <span
+                    key={s.code}
+                    className="px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-900 text-xs font-mono font-bold text-zinc-700 dark:text-zinc-200"
+                  >
+                    {s.code}: {s.attempted}/{s.total}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="pt-2">
             <button
@@ -230,11 +280,10 @@ export default function ResultView({
     );
   }
 
-  // Deduplicate standings specifically for THIS sitting (1st attempt per student only)
+  // ---------- Leaderboard for THIS exam (1st attempt per student only) ----------
   const rawTestRows = standings.filter(
     (s) =>
-      (result.sittingId && s.sittingId === result.sittingId) ||
-      s.sittingTitle === result.sittingTitle
+      (result.sittingId && s.sittingId === result.sittingId) || s.sittingTitle === result.sittingTitle
   );
   const seenCandidates = new Set();
   const testStandings = [];
@@ -253,13 +302,9 @@ export default function ResultView({
   );
   const userRank = userRankIndex !== -1 ? userRankIndex + 1 : 1;
 
-  const avgScore = Math.round(
-    testStandings.reduce((acc, s) => acc + s.score, 0) / totalParticipants
-  );
+  const avgScore = Math.round(testStandings.reduce((acc, s) => acc + s.score, 0) / totalParticipants);
   const fastestSecs =
-    testStandings.length > 0
-      ? Math.min(...testStandings.map((s) => s.timeSecs))
-      : result.timeSpentSeconds;
+    testStandings.length > 0 ? Math.min(...testStandings.map((s) => s.timeSecs)) : result.timeSpentSeconds;
   const percentile =
     totalParticipants > 1
       ? Math.max(1, Math.round(((totalParticipants - userRank) / (totalParticipants - 1)) * 100))
@@ -270,17 +315,17 @@ export default function ResultView({
       s.name.toLowerCase().includes(standingsSearch.toLowerCase()) ||
       (s.dept || '').toLowerCase().includes(standingsSearch.toLowerCase())
   );
-  const totalStandingPages = Math.max(
-    1,
-    Math.ceil(filteredTestStandings.length / STANDINGS_PER_PAGE)
-  );
+  const totalStandingPages = Math.max(1, Math.ceil(filteredTestStandings.length / STANDINGS_PER_PAGE));
   const paginatedTestStandings = filteredTestStandings.slice(
     standingsPage * STANDINGS_PER_PAGE,
     (standingsPage + 1) * STANDINGS_PER_PAGE
   );
 
   const handleShareBragCard = async () => {
-    const shareText = `🔥 AIA Academy Result — Ranked #${userRank} of ${totalParticipants}!\n👤 ${user.fullName} (${user.department})\n📚 ${result.title}\n🎯 Score: ${result.percentage}% (Test Avg: ${avgScore}%)\n⚡ Time: ${formatDuration(result.timeSpentSeconds)}\n\nTake this exact mock here: ${shareableExamUrl}`;
+    const subjectLine = isComboResult
+      ? `\n📊 ${subjectStats.map((s) => `${s.code} ${s.pct}%`).join(' • ')}`
+      : '';
+    const shareText = `🔥 AIA Academy Result — Ranked #${userRank} of ${totalParticipants}!\n👤 ${user.fullName} (${user.department})\n📚 ${result.title}\n🎯 Score: ${result.percentage}% (Test Avg: ${avgScore}%)${subjectLine}\n⚡ Time: ${formatDuration(result.timeSpentSeconds)}\n\nTake this exact mock here: ${shareableExamUrl}`;
 
     if (navigator.share) {
       try {
@@ -293,8 +338,10 @@ export default function ResultView({
     setTimeout(() => setCopiedSlip(false), 2500);
   };
 
-  const filteredQuestions = result.questions.filter((q) => {
-    const isCorrect = result.answers[q.id] === q.correctIndex;
+  // ---------- Corrections (with subject filter + per-subject numbering for combos) ----------
+  const filteredQuestions = resultQuestions.filter((q) => {
+    const isCorrect = resultAnswers[q.id] === q.correctIndex;
+    if (isComboResult && reviewSubject !== 'ALL' && q.courseCode !== reviewSubject) return false;
     if (reviewFilter === 'missed') return !isCorrect;
     if (reviewFilter === 'correct') return isCorrect;
     return true;
@@ -306,11 +353,16 @@ export default function ResultView({
     (reviewPage + 1) * QUESTIONS_PER_PAGE
   );
 
+  const questionLabel = (q) => {
+    if (!isComboResult) return `Q${resultQuestions.findIndex((item) => item.id === q.id) + 1}`;
+    const inSubject = resultQuestions.filter((item) => item.courseCode === q.courseCode);
+    return `Q${inSubject.findIndex((item) => item.id === q.id) + 1}`;
+  };
+
   const topThreeInExam = testStandings.slice(0, 3);
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 sm:pt-10 pb-20 space-y-8 animate-view relative">
-      {/* LIGHTWEIGHT ZERO-LAG CONFETTI SPLASH (Auto-unmounts after 3.2s) */}
       {showConfetti && (
         <>
           <style>{`
@@ -350,7 +402,7 @@ export default function ResultView({
           <span>Return to Dashboard</span>
         </button>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleCopyExamLink}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-bold hover:border-orange-500 transition-colors"
@@ -378,25 +430,26 @@ export default function ResultView({
             <span>Share</span>
           </button>
 
-          {result.missedQuestions.length > 0 && (
+          {missedQuestions.length > 0 && (
             <button
-              onClick={() => onRetryMistakes(result.missedQuestions, result.title)}
+              onClick={() => onRetryMistakes(missedQuestions, result.title)}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold shadow-sm transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Retry {result.missedQuestions.length} Missed Qs</span>
+              <span>Retry {missedQuestions.length} Missed Qs</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* Notice Banner if this was a Retake (2nd+ attempt) */}
       {result.isFirstAttempt === false && (
         <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2.5">
             <Sparkles className="w-4 h-4 text-amber-500 flex-shrink-0" />
             <span>
-              <strong>Retake Practice Attempt (#{result.attemptNumber}):</strong> Your personal score is shown below. Note that the Official Leaderboard strictly preserves each candidate's <strong>1st attempt</strong>.
+              <strong>Retake Practice Attempt (#{result.attemptNumber}):</strong> Your personal score is shown
+              below. Note that the Official Leaderboard strictly preserves each candidate's{' '}
+              <strong>1st attempt</strong>.
             </span>
           </div>
         </div>
@@ -419,6 +472,11 @@ export default function ResultView({
               >
                 {didPass ? `PASSED (Pass Mark: ${passMark}%)` : `BELOW PASS MARK (${passMark}%)`}
               </span>
+              {isComboResult && (
+                <span className="text-[11px] font-mono px-2.5 py-1 rounded font-bold bg-orange-500/10 text-orange-600 dark:text-orange-400 inline-flex items-center gap-1">
+                  <Layers className="w-3 h-3" /> {subjectCodes.length} SUBJECTS
+                </span>
+              )}
             </div>
 
             <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight mt-3">
@@ -431,11 +489,10 @@ export default function ResultView({
             <p className="text-sm text-zinc-500 mt-1">{result.title}</p>
           </div>
 
-          {/* 4-Column Peer Comparison Strip */}
           <div className="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-zinc-200 dark:divide-zinc-800 border-y border-zinc-200 dark:border-zinc-800 py-5 gap-y-4">
             <div className="pr-3">
               <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-bold block">
-                Your Score
+                {isComboResult ? 'Overall Score' : 'Your Score'}
               </span>
               <span className="font-mono text-2xl sm:text-3xl font-extrabold text-orange-600 mt-1 block">
                 {result.percentage}%
@@ -449,9 +506,7 @@ export default function ResultView({
               <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-bold block">
                 1st-Try Rank
               </span>
-              <span className="font-mono text-2xl sm:text-3xl font-extrabold mt-1 block">
-                #{userRank}
-              </span>
+              <span className="font-mono text-2xl sm:text-3xl font-extrabold mt-1 block">#{userRank}</span>
               <span className="text-[11px] text-zinc-500">of {totalParticipants} candidates</span>
             </div>
 
@@ -474,9 +529,7 @@ export default function ResultView({
               <span className="font-mono text-2xl sm:text-3xl font-extrabold mt-1 block">
                 {result.correctCount}/{result.totalQuestions}
               </span>
-              <span className="text-[11px] text-zinc-500">
-                Top {100 - percentile + 1}%
-              </span>
+              <span className="text-[11px] text-zinc-500">Top {100 - percentile + 1}%</span>
             </div>
           </div>
         </div>
@@ -492,31 +545,34 @@ export default function ResultView({
 
           <div className="my-5 space-y-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-orange-100">
-                {user.department}
-              </p>
-              <h3 className="text-2xl font-extrabold tracking-tight text-white">
-                {user.fullName}
-              </h3>
+              <p className="text-xs font-semibold uppercase tracking-wider text-orange-100">{user.department}</p>
+              <h3 className="text-2xl font-extrabold tracking-tight text-white">{user.fullName}</h3>
               <p className="text-xs text-orange-100 truncate mt-0.5">{result.title}</p>
             </div>
 
             <div className="p-4 rounded-2xl bg-black text-white flex items-center justify-between">
               <div>
-                <span className="text-[10px] font-mono uppercase text-zinc-400 block">
-                  Verified Score
-                </span>
-                <span className="font-mono text-3xl font-extrabold text-orange-400">
-                  {result.percentage}%
-                </span>
+                <span className="text-[10px] font-mono uppercase text-zinc-400 block">Verified Score</span>
+                <span className="font-mono text-3xl font-extrabold text-orange-400">{result.percentage}%</span>
               </div>
               <div className="text-right font-mono">
                 <span className="text-[10px] uppercase text-zinc-400 block">Finish Time</span>
-                <span className="text-base font-bold text-teal-400">
-                  {formatDuration(result.timeSpentSeconds)}
-                </span>
+                <span className="text-base font-bold text-teal-400">{formatDuration(result.timeSpentSeconds)}</span>
               </div>
             </div>
+
+            {isComboResult && (
+              <div className="flex flex-wrap gap-1.5">
+                {subjectStats.map((s) => (
+                  <span
+                    key={s.code}
+                    className="px-2 py-1 rounded-lg bg-black/70 text-[10px] font-mono font-bold text-white"
+                  >
+                    {s.code} <span className="text-orange-300">{s.pct}%</span>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           <button
@@ -538,9 +594,75 @@ export default function ResultView({
         </div>
       </div>
 
-      {/* Switcher: Per-Test Leaderboard vs. Question-by-Question Review */}
+      {/* COMBO: score per subject */}
+      {isComboResult && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h2 className="font-extrabold text-base flex items-center gap-2">
+              <Layers className="w-4 h-4 text-orange-600" /> Score by Subject
+            </h2>
+            <span className="text-[11px] font-mono text-zinc-400">
+              Strongest: <strong className="text-teal-600 dark:text-teal-400">{bestSubject.code}</strong> • Needs
+              work: <strong className="text-orange-600">{weakestSubject.code}</strong>
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {subjectStats.map((s) => {
+              const passed = s.pct >= passMark;
+              return (
+                <button
+                  key={s.code}
+                  type="button"
+                  onClick={() => {
+                    setActiveResultTab('review');
+                    setReviewSubject(s.code);
+                    setReviewFilter('all');
+                    setReviewPage(0);
+                  }}
+                  className="text-left p-4 rounded-2xl app-surface border border-zinc-200 dark:border-zinc-800 hover:border-orange-500/60 transition-colors space-y-2.5"
+                  title="Open the corrections for this subject"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-sm font-extrabold">{s.code}</span>
+                    <span
+                      className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
+                        passed
+                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                          : 'bg-red-500/15 text-red-500'
+                      }`}
+                    >
+                      {passed ? 'PASS' : 'LOW'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-end justify-between">
+                    <span className="font-mono text-3xl font-extrabold text-orange-600">{s.pct}%</span>
+                    <span className="text-[11px] text-zinc-500 font-mono">
+                      {s.correct}/{s.total} correct
+                    </span>
+                  </div>
+
+                  <div className="h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${passed ? 'bg-teal-500' : 'bg-orange-500'}`}
+                      style={{ width: `${s.pct}%` }}
+                    />
+                  </div>
+
+                  <span className="text-[10px] font-mono text-zinc-400 block">
+                    {s.attempted}/{s.total} attempted
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Switcher */}
       <div className="flex items-center justify-between flex-wrap gap-2 border-b border-zinc-200 dark:border-zinc-800 pb-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setActiveResultTab('standings')}
             className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors ${
@@ -562,19 +684,16 @@ export default function ResultView({
             }`}
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Question Corrections ({result.questions.length})</span>
+            <span>Question Corrections ({resultQuestions.length})</span>
           </button>
         </div>
 
-        <span className="text-[11px] font-mono text-zinc-400">
-          ★ Official Leaderboard logs 1st attempts only
-        </span>
+        <span className="text-[11px] font-mono text-zinc-400">★ Official Leaderboard logs 1st attempts only</span>
       </div>
 
-      {/* TAB 1: PER-TEST STANDINGS WITH TOP 3 PODIUM + 4TH+ LIST */}
+      {/* TAB 1: LEADERBOARD */}
       {activeResultTab === 'standings' ? (
         <section className="space-y-6">
-          {/* TOP 3 PODIUM CARDS */}
           {standingsPage === 0 && !standingsSearch && topThreeInExam.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end pt-2">
               {[
@@ -596,9 +715,9 @@ export default function ResultView({
                           : 'bg-orange-950/10 dark:bg-orange-950/30 border border-orange-500/30 order-3'
                       }`}
                     >
-                      <div className="flex sm:flex-col items-center gap-3 sm:gap-2">
+                      <div className="flex sm:flex-col items-center gap-3 sm:gap-2 min-w-0">
                         <div
-                          className={`flex items-center justify-center rounded-2xl ${
+                          className={`flex items-center justify-center rounded-2xl flex-shrink-0 ${
                             rank === 1
                               ? 'w-14 h-14 bg-gradient-to-br from-amber-400 to-orange-600 text-white shadow-md'
                               : rank === 2
@@ -614,18 +733,18 @@ export default function ResultView({
                             <Award className="w-5 h-5" />
                           )}
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <span className="font-mono text-[10px] uppercase font-extrabold text-orange-600 dark:text-amber-400 block">
                             #{rank} Place
                           </span>
-                          <h4 className="font-extrabold text-sm sm:text-base">
+                          <h4 className="font-extrabold text-sm sm:text-base truncate">
                             {item.name} {isMe && <span className="text-orange-600">(You)</span>}
                           </h4>
-                          <span className="text-xs text-zinc-500 block">{item.dept}</span>
+                          <span className="text-xs text-zinc-500 block truncate">{item.dept}</span>
                         </div>
                       </div>
 
-                      <div className="text-right sm:text-center font-mono">
+                      <div className="text-right sm:text-center font-mono flex-shrink-0">
                         <span className="text-xl font-extrabold text-orange-600 dark:text-amber-400 block">
                           {item.score}%
                         </span>
@@ -644,9 +763,7 @@ export default function ResultView({
               <h2 className="font-extrabold text-base">
                 All Challengers — {result.sittingTitle || result.title}
               </h2>
-              <p className="text-xs text-zinc-500">
-                Ranked by 1st-attempt accuracy and finish speed.
-              </p>
+              <p className="text-xs text-zinc-500">Ranked by 1st-attempt accuracy, then finish speed.</p>
             </div>
 
             <div className="flex items-center gap-2">
@@ -677,9 +794,7 @@ export default function ResultView({
                 </span>
                 <button
                   disabled={standingsPage >= totalStandingPages - 1}
-                  onClick={() =>
-                    setStandingsPage((p) => Math.min(totalStandingPages - 1, p + 1))
-                  }
+                  onClick={() => setStandingsPage((p) => Math.min(totalStandingPages - 1, p + 1))}
                   className="p-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 disabled:opacity-30"
                 >
                   <ChevronRight className="w-4 h-4" />
@@ -688,13 +803,10 @@ export default function ResultView({
             </div>
           </div>
 
-          {/* Full Orderly Leaderboard Table */}
           <div className="divide-y divide-zinc-200 dark:divide-zinc-800 border-y border-zinc-200 dark:border-zinc-800">
             {paginatedTestStandings.map((row) => {
               const globalRank = testStandings.findIndex((item) => item.id === row.id) + 1;
-              const isMe =
-                row.id === result.entryId ||
-                row.name.toLowerCase() === user.fullName.toLowerCase();
+              const isMe = row.id === result.entryId || row.name.toLowerCase() === user.fullName.toLowerCase();
 
               return (
                 <div
@@ -703,9 +815,9 @@ export default function ResultView({
                     isMe ? 'bg-orange-500/[0.06] font-semibold' : ''
                   }`}
                 >
-                  <div className="flex items-center gap-3.5">
+                  <div className="flex items-center gap-3.5 min-w-0">
                     <span
-                      className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${
+                      className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center flex-shrink-0 ${
                         globalRank === 1
                           ? 'bg-amber-500 text-black'
                           : globalRank === 2
@@ -717,21 +829,17 @@ export default function ResultView({
                     >
                       {globalRank}
                     </span>
-                    <div>
-                      <span className="font-bold block">
+                    <div className="min-w-0">
+                      <span className="font-bold block truncate">
                         {row.name} {isMe && <span className="text-orange-600">(You)</span>}
                       </span>
-                      <span className="text-xs text-zinc-500">{row.dept}</span>
+                      <span className="text-xs text-zinc-500 block truncate">{row.dept}</span>
                     </div>
                   </div>
 
-                  <div className="text-right font-mono">
-                    <span className="font-extrabold text-orange-600 dark:text-orange-400 block">
-                      {row.score}%
-                    </span>
-                    <span className="text-xs text-teal-600 dark:text-teal-400">
-                      {formatDuration(row.timeSecs)}
-                    </span>
+                  <div className="text-right font-mono flex-shrink-0">
+                    <span className="font-extrabold text-orange-600 dark:text-orange-400 block">{row.score}%</span>
+                    <span className="text-xs text-teal-600 dark:text-teal-400">{formatDuration(row.timeSecs)}</span>
                   </div>
                 </div>
               );
@@ -739,17 +847,40 @@ export default function ResultView({
           </div>
         </section>
       ) : (
-        /* TAB 2: PAGINATED 3-PER-PAGE QUESTION CORRECTIONS */
+        /* TAB 2: QUESTION CORRECTIONS */
         <section className="space-y-6">
+          {/* Subject filter (combos only) */}
+          {isComboResult && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              <span className="text-[10px] font-mono uppercase text-zinc-400 flex items-center gap-1 flex-shrink-0">
+                <Layers className="w-3 h-3 text-orange-500" /> Subject:
+              </span>
+              {['ALL', ...subjectCodes].map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => {
+                    setReviewSubject(code);
+                    setReviewPage(0);
+                  }}
+                  className={`px-3 py-1 rounded-lg text-xs font-mono font-bold whitespace-nowrap flex-shrink-0 transition-colors ${
+                    reviewSubject === code
+                      ? 'bg-orange-600 text-white'
+                      : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
+                  }`}
+                >
+                  {code === 'ALL' ? 'All subjects' : code}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               {[
-                { id: 'all', label: `All (${result.questions.length})` },
-                { id: 'missed', label: `Missed (${result.missedQuestions.length})` },
-                {
-                  id: 'correct',
-                  label: `Correct (${result.questions.length - result.missedQuestions.length})`
-                }
+                { id: 'all', label: `All (${resultQuestions.length})` },
+                { id: 'missed', label: `Missed (${missedQuestions.length})` },
+                { id: 'correct', label: `Correct (${resultQuestions.length - missedQuestions.length})` }
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -791,85 +922,92 @@ export default function ResultView({
             </div>
           </div>
 
-          <div className="divide-y divide-zinc-200 dark:divide-zinc-800 border-y border-zinc-200 dark:border-zinc-800">
-            {paginatedReview.map((q) => {
-              const globalNumber = result.questions.findIndex((item) => item.id === q.id) + 1;
-              const userSelected = result.answers[q.id];
-              const isCorrect = userSelected === q.correctIndex;
-              const isSaved = bookmarks.some((b) => b.id === q.id);
+          {filteredQuestions.length === 0 ? (
+            <div className="py-12 text-center text-xs text-zinc-500 border-y border-zinc-200 dark:border-zinc-800">
+              No questions match this filter.
+            </div>
+          ) : (
+            <div className="divide-y divide-zinc-200 dark:divide-zinc-800 border-y border-zinc-200 dark:border-zinc-800">
+              {paginatedReview.map((q) => {
+                const userSelected = resultAnswers[q.id];
+                const isCorrect = userSelected === q.correctIndex;
+                const isSaved = bookmarks.some((b) => b.id === q.id);
 
-              return (
-                <div key={q.id} className="py-6 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <span className="font-mono text-xs font-bold px-2.5 py-1 rounded bg-zinc-900 dark:bg-zinc-800 text-white">
-                        Q{globalNumber}
-                      </span>
-                      <span className="font-mono text-xs font-bold text-teal-600 dark:text-teal-400">
-                        {q.courseCode}
-                      </span>
-                      {isCorrect ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-bold text-teal-600 dark:text-teal-400">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Correct
+                return (
+                  <div key={q.id} className="py-6 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <span className="font-mono text-xs font-bold px-2.5 py-1 rounded bg-zinc-900 dark:bg-zinc-800 text-white">
+                          {questionLabel(q)}
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-xs font-bold text-red-500">
-                          <XCircle className="w-3.5 h-3.5" />{' '}
-                          {userSelected === undefined ? 'Unanswered' : 'Missed'}
+                        <span className="font-mono text-xs font-bold text-teal-600 dark:text-teal-400">
+                          {q.courseCode}
                         </span>
-                      )}
+                        {isCorrect ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-teal-600 dark:text-teal-400">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Correct
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-red-500">
+                            <XCircle className="w-3.5 h-3.5" />{' '}
+                            {userSelected === undefined ? 'Unanswered' : 'Missed'}
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => onToggleBookmark(q)}
+                        className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 ${
+                          isSaved ? 'bg-orange-600 text-white' : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500'
+                        }`}
+                      >
+                        <Bookmark className="w-3.5 h-3.5" />
+                        <span>{isSaved ? 'Saved' : 'Bookmark'}</span>
+                      </button>
                     </div>
 
-                    <button
-                      onClick={() => onToggleBookmark(q)}
-                      className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 ${
-                        isSaved
-                          ? 'bg-orange-600 text-white'
-                          : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500'
-                      }`}
-                    >
-                      <Bookmark className="w-3.5 h-3.5" />
-                      <span>{isSaved ? 'Saved' : 'Bookmark'}</span>
-                    </button>
+                    {q.passage && (
+                      <p className="text-xs text-zinc-600 dark:text-zinc-400 bg-teal-500/5 p-3 rounded-xl border-l-4 border-teal-500">
+                        {q.passage}
+                      </p>
+                    )}
+
+                    <p className="font-bold text-base">{q.question}</p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs sm:text-sm">
+                      {q.options.map((opt, optIdx) => {
+                        const isRightAnswer = optIdx === q.correctIndex;
+                        const isUserWrongChoice = optIdx === userSelected && !isRightAnswer;
+
+                        return (
+                          <div
+                            key={optIdx}
+                            className={`p-3 rounded-xl border flex items-center gap-2.5 ${
+                              isRightAnswer
+                                ? 'bg-teal-500/10 border-teal-500 text-teal-800 dark:text-teal-300 font-semibold'
+                                : isUserWrongChoice
+                                ? 'bg-red-500/10 border-red-500 text-red-600 dark:text-red-400'
+                                : 'border-zinc-200 dark:border-zinc-800 text-zinc-500'
+                            }`}
+                          >
+                            <span className="font-mono font-bold">{['A', 'B', 'C', 'D', 'E'][optIdx]}.</span>
+                            <span>{opt}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {q.explanation && (
+                      <p className="text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-100/80 dark:bg-zinc-900/80 p-3.5 rounded-xl border-l-4 border-orange-600">
+                        <strong className="text-zinc-900 dark:text-white">Rationale: </strong>
+                        {q.explanation}
+                      </p>
+                    )}
                   </div>
-
-                  <p className="font-bold text-base">{q.question}</p>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs sm:text-sm">
-                    {q.options.map((opt, optIdx) => {
-                      const isRightAnswer = optIdx === q.correctIndex;
-                      const isUserWrongChoice = optIdx === userSelected && !isRightAnswer;
-
-                      return (
-                        <div
-                          key={optIdx}
-                          className={`p-3 rounded-xl border flex items-center gap-2.5 ${
-                            isRightAnswer
-                              ? 'bg-teal-500/10 border-teal-500 text-teal-800 dark:text-teal-300 font-semibold'
-                              : isUserWrongChoice
-                              ? 'bg-red-500/10 border-red-500 text-red-600 dark:text-red-400'
-                              : 'border-zinc-200 dark:border-zinc-800 text-zinc-500'
-                          }`}
-                        >
-                          <span className="font-mono font-bold">
-                            {['A', 'B', 'C', 'D', 'E'][optIdx]}.
-                          </span>
-                          <span>{opt}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {q.explanation && (
-                    <p className="text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-100/80 dark:bg-zinc-900/80 p-3.5 rounded-xl border-l-4 border-orange-600">
-                      <strong className="text-zinc-900 dark:text-white">Rationale: </strong>
-                      {q.explanation}
-                    </p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </section>
       )}
     </div>
